@@ -5,32 +5,39 @@ import '../constants/api_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static Future<Map<String, dynamic>> signupUser(String cin, String permis,
-      String numPhone, String email, String password) async {
-    final url = Uri.parse('$userEndpoint/signup');
+  static Future<Map<String, String>> _getHeaders([bool isMultipart = false]) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString("accessToken");
 
-    final response = await http.post(
-      url,
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({
-        "cin": cin,
-        "permis": permis,
-        "num_phone": numPhone,
-        "email": email,
-        "password": password,
-      }),
-    );
+    Map<String, String> headers = {};
+    if (!isMultipart) {
+      headers["Content-Type"] = "application/json";
+    }
+    if (token != null) {
+      headers["Authorization"] = "Bearer $token";
+    }
+    return headers;
+  }
 
-    if (response.statusCode == 201) {
-      return jsonDecode(response.body);
-    } else {
-      throw Exception("Signup Failed: ${response.body}");
+  static Map<String, dynamic> _decodeJwt(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) {
+        throw Exception('Invalid token');
+      }
+
+      final payload = parts[1];
+      final normalized = base64Url.normalize(payload);
+      final resp = utf8.decode(base64Url.decode(normalized));
+      return jsonDecode(resp);
+    } catch (e) {
+      return {};
     }
   }
 
   static Future<Map<String, dynamic>> loginUser(
       String email, String password) async {
-    final url = Uri.parse('$userEndpoint/login');
+    final url = Uri.parse('$authEndpoint/user/login');
 
     final response = await http.post(
       url,
@@ -44,8 +51,15 @@ class ApiService {
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
 
+      String accessToken = data["accessToken"];
+      var decoded = _decodeJwt(accessToken);
+
       SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.setString("userId", data["user"]["_id"]);
+      await prefs.setString("accessToken", accessToken);
+      
+      if (decoded["id"] != null) {
+        await prefs.setString("userId", decoded["id"]);
+      }
 
       return data;
     } else {
@@ -53,7 +67,7 @@ class ApiService {
     }
   }
 
-  static Future<bool> createBooking({
+  static Future<Map<String, dynamic>?> createBooking({
     required String userId,
     required String carId,
     required DateTime startDate,
@@ -63,31 +77,25 @@ class ApiService {
     required String estimatedLocation,
   }) async {
     final url = Uri.parse(bookingEndpoint);
-
-    final String idBooking = DateTime.now().millisecondsSinceEpoch.toString();
-
+    
     final response = await http.post(
       url,
-      headers: {"Content-Type": "application/json"},
+      headers: await _getHeaders(),
       body: jsonEncode({
-        "id_booking": idBooking,
-        "id_user": userId,
-        "id_car": carId,
-        "date_hour_booking": startDate.toIso8601String(),
-        "date_hour_expire": endDate.toIso8601String(),
-        "location_Before_Renting": locationBeforeRenting,
-        "location_After_Renting": locationAfterRenting,
-        "estimated_Location": estimatedLocation,
-        "status": false,
-        "paiement": 0,
+        "userId": userId,
+        "carId": carId,
+        "startDate": startDate.toIso8601String(),
+        "endDate": endDate.toIso8601String(),
+        "pickupLocation": locationBeforeRenting,
+        "dropoffLocation": locationAfterRenting,
       }),
     );
 
     if (response.statusCode == 201) {
-      return true;
+      return jsonDecode(response.body);
     } else {
       print("❌ Booking Error: ${response.body}");
-      return false;
+      return null;
     }
   }
 
@@ -96,7 +104,7 @@ class ApiService {
 
     final response = await http.get(
       url,
-      headers: {"Content-Type": "application/json"},
+      headers: await _getHeaders(),
     );
 
     if (response.statusCode == 200) {
@@ -108,11 +116,11 @@ class ApiService {
 
   static Future<List<Map<String, dynamic>>> getAvailableCars() async {
     try {
-      final url = Uri.parse('$carEndpoint?car_work=true');
+      final url = Uri.parse('$carEndpoint?status=AVAILABLE');
 
       final response = await http.get(
         url,
-        headers: {"Content-Type": "application/json"},
+        headers: await _getHeaders(),
       );
 
       if (response.statusCode == 200) {
@@ -132,7 +140,7 @@ class ApiService {
 
     final response = await http.get(
       url,
-      headers: {"Content-Type": "application/json"},
+      headers: await _getHeaders(),
     );
 
     if (response.statusCode == 200) {
@@ -148,11 +156,11 @@ class ApiService {
 
     final response = await http.put(
       url,
-      headers: {"Content-Type": "application/json"},
+      headers: await _getHeaders(),
       body: jsonEncode({
-        "num_phone": numPhone,
+        "phone": numPhone,
         "email": email,
-        "profile_picture": profilePicture,
+        "profilePhoto": profilePicture,
       }),
     );
 
@@ -184,7 +192,7 @@ class ApiService {
 
     final response = await http.get(
       url,
-      headers: {"Content-Type": "application/json"},
+      headers: await _getHeaders(),
     );
 
     if (response.statusCode == 200) {
@@ -199,9 +207,11 @@ class ApiService {
     final url = Uri.parse('$reclamationEndpoint');
 
     var request = http.MultipartRequest('POST', url);
-    request.fields['id_user'] = userId;
+    request.headers.addAll(await _getHeaders(true));
+    
+    request.fields['userId'] = userId;
     request.fields['title'] = title;
-    request.fields['description'] = description;
+    request.fields['message'] = description;
 
     if (image != null) {
       request.files.add(await http.MultipartFile.fromPath('image', image.path));

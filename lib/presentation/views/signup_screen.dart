@@ -98,7 +98,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
         request.fields['fullName'] = _fullNameController.text.trim();
         request.fields['email'] = _emailController.text.trim();
-        request.fields['num_phone'] = _phoneNumberController.text.trim();
+        request.fields['phone'] = _phoneNumberController.text.trim();
         request.fields['password'] = _passwordController.text.trim();
 
         request.files.add(

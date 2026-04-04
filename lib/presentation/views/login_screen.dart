@@ -3,15 +3,13 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../constants/api_config.dart';
 import '../../constants/theme.dart';
+import '../../services/api_service.dart';
 import './widgets/custom_text_field.dart';
 import './widgets/password_strength_indicator.dart';
 import './widgets/social_login_button.dart';
 import 'home_screen.dart';
 import 'signup_screen.dart';
 import 'forgot_password_screen.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -34,40 +32,21 @@ class _LoginScreenState extends State<LoginScreen> {
       });
 
       try {
-        const String baseUrl = "$userEndpoint/login";
-
-        var uri = Uri.parse(baseUrl);
-        var response = await http.post(
-          uri,
-          headers: {"Content-Type": "application/json"},
-          body: jsonEncode({
-            "email": _emailController.text.trim(),
-            "password": _passwordController.text.trim(),
-          }),
+        await ApiService.loginUser(
+          _emailController.text.trim(),
+          _passwordController.text.trim(),
         );
 
-        if (response.statusCode == 200) {
-          var data = jsonDecode(response.body);
+        Navigator.pushReplacement(
+            context, MaterialPageRoute(builder: (context) => HomeScreen()));
 
-          SharedPreferences prefs = await SharedPreferences.getInstance();
-          await prefs.setString(
-              "userId", data["user"]["_id"]); // ✅ Only save userId
-
-          Navigator.pushReplacement(
-              context, MaterialPageRoute(builder: (context) => HomeScreen()));
-
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text("Login Successful!")));
-        } else {
-          var errorData = jsonDecode(response.body);
-          setState(() {
-            _errorMessage =
-                errorData["message"] ?? "Invalid email or password.";
-          });
-        }
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Login Successful!")));
       } catch (e) {
         setState(() {
-          _errorMessage = "Server connection failed. Check your network.";
+          _errorMessage = e.toString().contains("Exception: Login Failed")
+              ? "Invalid email or password."
+              : "Server connection failed. Check your network.";
         });
       }
 

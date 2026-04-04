@@ -17,7 +17,7 @@ class _SplashScreenState extends State<SplashScreen> {
         context,
         MaterialPageRoute(
             builder: (context) =>
-                LoginScreen()), // Replace with your main screen
+                LoginScreen()), 
       );
     });
   }
@@ -25,11 +25,11 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white, // Adjust the background color
+      backgroundColor: Colors.white, 
       body: Center(
         child: Image.asset(
-          'assets/KariaGo.gif', // Your custom GIF
-          width: 200, // Adjust the size
+          'assets/KariaGo.gif', 
+          width: 200, 
           height: 200,
           fit: BoxFit.contain,
         ),

@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 
 import '../../constants/api_config.dart';
 import '../../constants/theme.dart';
+import '../../services/api_service.dart';
 import './widgets/custom_text_field.dart';
 
 class PaymentScreen extends StatefulWidget {
@@ -85,28 +86,17 @@ class _PaymentScreenState extends State<PaymentScreen>
 
     if (userId == null) return null;
 
-    final url = Uri.parse(bookingEndpoint);
-    final response = await http.post(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({
-        "id_user": userId,
-        "id_car": widget.carId,
-        "date_hour_booking": widget.startDate.toIso8601String(),
-        "date_hour_expire": widget.endDate.toIso8601String(),
-        "paiement": widget.totalAmount,
-        "location_Before_Renting": widget.pickupLocation,
-        "location_After_Renting": widget.dropOffLocation,
-        "estimated_Location": widget.dropOffLocation,
-        "status": true
-      }),
+    final bookingResponse = await ApiService.createBooking(
+        userId: userId,
+        carId: widget.carId,
+        startDate: widget.startDate,
+        endDate: widget.endDate,
+        locationBeforeRenting: widget.pickupLocation,
+        locationAfterRenting: widget.dropOffLocation,
+        estimatedLocation: widget.dropOffLocation,
     );
 
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      return json.decode(response.body);
-    } else {
-      return null;
-    }
+    return bookingResponse;
   }
 
   void _simulatePayment() async {
