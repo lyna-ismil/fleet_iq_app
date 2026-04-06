@@ -5,6 +5,7 @@ import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http_parser/http_parser.dart';
 import '../../constants/api_config.dart';
 import '../../constants/theme.dart';
 import 'home_screen.dart';
@@ -102,9 +103,19 @@ class _SignUpScreenState extends State<SignUpScreen> {
         request.fields['password'] = _passwordController.text.trim();
 
         request.files.add(
-            await http.MultipartFile.fromPath("cin", compressedIdCard.path));
-        request.files.add(await http.MultipartFile.fromPath(
-            "permis", compressedDriverLicense.path));
+          await http.MultipartFile.fromPath(
+            "cin",
+            compressedIdCard.path,
+            contentType: MediaType('image', 'jpeg'),
+          ),
+        );
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            "permis",
+            compressedDriverLicense.path,
+            contentType: MediaType('image', 'jpeg'),
+          ),
+        );
 
         var streamedResponse =
             await request.send().timeout(Duration(seconds: 60));

@@ -1,6 +1,6 @@
 // lib/constants/api_config.dart
 
-const String baseApiUrl = "http://localhost:5000";
+const String baseApiUrl = "http://192.168.1.5:5000";
 // Gateway-exposed routes:
 const String authEndpoint = "$baseApiUrl/auth";
 const String userEndpoint = "$baseApiUrl/users";
