@@ -11,11 +11,13 @@ Project file structure:
         views/
             AboutUsScreen.dart
             NFCKeyScreen.dart
+            booking_dashboard_screen.dart
             confirmation_screen.dart
             estimation_screen.dart
             forgot_password_screen.dart
             home_screen.dart
             login_screen.dart
+            main_layout.dart
             payment_screen.dart
             profile_screen.dart
             reclamation_screen.dart
@@ -48,7 +50,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'KariaGo',
+      title: 'NexDrive',
       theme: AppTheme.lightTheme,
       home: SplashScreen(), // Start with Splash Screen
     );
@@ -60,7 +62,7 @@ class MyApp extends StatelessWidget {
 
 // lib/constants/api_config.dart
 
-const String baseApiUrl = "http://localhost:5000";
+const String baseApiUrl = "http://192.168.1.5:5000";
 // Gateway-exposed routes:
 const String authEndpoint = "$baseApiUrl/auth";
 const String userEndpoint = "$baseApiUrl/users";
@@ -77,8 +79,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   // Color Palette
-  static const Color brandBlue = Color(0xFF0A66FF);
-  static const Color brandLight = Color(0xFFEAF2FF);
+  static const Color brandBlue = Color(0xFF111111);
+  static const Color brandLight = Color(0xFFF4F4F5);
   static const Color textMain = Color(0xFF1A1B1E);
   static const Color textMuted = Color(0xFF8A8D93);
   static const Color surfaceWhite = Color(0xFFFFFFFF);
@@ -245,6 +247,10 @@ class Car {
   final String matricule;
   final String energyType;
   final String location;
+  final String? photo;
+  final String? description;
+  final bool cityRestriction;
+  final List<String> allowedCities;
 
   Car({
     required this.id,
@@ -252,6 +258,10 @@ class Car {
     required this.matricule,
     required this.energyType,
     required this.location,
+    this.photo,
+    this.description,
+    this.cityRestriction = false,
+    this.allowedCities = const [],
   });
 }
 
@@ -1014,6 +1024,291 @@ class _NFCKeyScreenState extends State<NFCKeyScreen>
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+
+--- FILE: presentation/views/booking_dashboard_screen.dart ---
+
+import 'package:flutter/material.dart';
+import '../../constants/theme.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../services/api_service.dart';
+import 'package:intl/intl.dart';
+
+class BookingDashboardScreen extends StatefulWidget {
+  @override
+  _BookingDashboardScreenState createState() => _BookingDashboardScreenState();
+}
+
+class _BookingDashboardScreenState extends State<BookingDashboardScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  bool _isLoading = true;
+  List<dynamic> _activeBookings = [];
+  List<dynamic> _historyBookings = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _fetchBookings();
+  }
+
+  Future<void> _fetchBookings() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? userId = prefs.getString("userId");
+      
+      if (userId == null) {
+         setState(() => _isLoading = false);
+         return;
+      }
+
+      var bookingData = await ApiService.getMyBookings(userId);
+
+      setState(() {
+        _activeBookings = bookingData['active'] ?? [];
+        _historyBookings = bookingData['history'] ?? [];
+        _isLoading = false;
+      });
+    } catch (e) {
+      print("Error fetching bookings: $e");
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.surfaceGray,
+      appBar: AppBar(
+        title: Text("My Bookings", style: Theme.of(context).textTheme.displaySmall),
+        backgroundColor: AppTheme.surfaceWhite,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: AppTheme.brandBlue,
+          unselectedLabelColor: AppTheme.textMuted,
+          indicatorColor: AppTheme.brandBlue,
+          indicatorWeight: 3,
+          tabs: [
+            Tab(text: "Active"),
+            Tab(text: "History"),
+          ],
+        ),
+      ),
+      body: _isLoading 
+          ? Center(child: CircularProgressIndicator(color: AppTheme.brandBlue))
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                _buildActiveTab(),
+                _buildHistoryTab(),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildActiveTab() {
+    if (_activeBookings.isEmpty) {
+      return _buildEmptyState(Icons.car_rental, "No active rentals", "You don't have any ongoing or upcoming rentals.");
+    }
+    
+    // For simplicity, just display the first active booking
+    var booking = _activeBookings.first;
+    var car = booking['car'] ?? {};
+    
+    // Countdown logic dummy
+    DateTime endDate = DateTime.parse(booking['endDate']);
+    Duration remaining = endDate.difference(DateTime.now());
+    String timeRemaining = remaining.isNegative ? "Expired" : "${remaining.inDays}d ${remaining.inHours % 24}h ${remaining.inMinutes % 60}m";
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceWhite,
+              borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+              boxShadow: AppTheme.softShadow,
+              border: Border.all(color: AppTheme.surfaceBorder),
+            ),
+            padding: EdgeInsets.all(24),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppTheme.success.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        "ACTIVE RENTAL",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.success,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      timeRemaining,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppTheme.danger,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 20),
+                car['photo'] != null && car['photo'].isNotEmpty
+                    ? Image.network(car['photo'], height: 120, fit: BoxFit.contain, errorBuilder: (_,__,___) => Icon(Icons.directions_car, size: 80, color: AppTheme.textMuted))
+                    : Icon(Icons.directions_car, size: 80, color: AppTheme.textMuted),
+                SizedBox(height: 16),
+                Text(
+                  car['marque'] ?? 'Unknown Car',
+                  style: Theme.of(context).textTheme.displayMedium,
+                ),
+                Text(
+                  car['matricule'] ?? 'N/A',
+                  style: TextStyle(color: AppTheme.textMuted),
+                ),
+                SizedBox(height: 24),
+                
+                // Location Details
+                Row(
+                  children: [
+                    Icon(Icons.location_on, color: AppTheme.brandBlue, size: 24),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Pickup Location", style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                          Text(booking['pickupLocation'] ?? 'Location details not available', style: TextStyle(fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 32),
+                
+                ElevatedButton.icon(
+                  onPressed: () {
+                    // Navigate to NFCKeyScreen if exists, or show placeholder
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Accessing NFC Key...")));
+                  },
+                  icon: Icon(Icons.nfc),
+                  label: Text("Access NFC Key"),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: Size(double.infinity, 56),
+                    backgroundColor: AppTheme.brandBlue,
+                  ),
+                ),
+              ],
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryTab() {
+     if (_historyBookings.isEmpty) {
+      return _buildEmptyState(Icons.history, "No rental history", "Your past trips will appear here.");
+    }
+
+    return ListView.builder(
+      padding: EdgeInsets.all(16),
+      itemCount: _historyBookings.length,
+      itemBuilder: (context, index) {
+        var booking = _historyBookings[index];
+        var car = booking['car'] ?? {};
+        var startDate = DateTime.parse(booking['startDate']);
+        var formattedDate = DateFormat('MMM dd, yyyy').format(startDate);
+        
+        bool isCompleted = booking['status'] == 'COMPLETED';
+        var statusColor = isCompleted ? AppTheme.success : AppTheme.textMuted;
+
+        return Card(
+          margin: EdgeInsets.only(bottom: 16),
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Row(
+              children: [
+                 car['photo'] != null && car['photo'].isNotEmpty
+                    ? Image.network(car['photo'], width: 60, height: 40, fit: BoxFit.contain, errorBuilder: (_,__,___) => Icon(Icons.directions_car, color: AppTheme.textMuted))
+                    : Icon(Icons.directions_car, size: 40, color: AppTheme.textMuted),
+                 SizedBox(width: 16),
+                 Expanded(
+                   child: Column(
+                     crossAxisAlignment: CrossAxisAlignment.start,
+                     children: [
+                       Text(car['marque'] ?? 'Unknown Car', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                       Text(formattedDate, style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                     ],
+                   ),
+                 ),
+                 Column(
+                   crossAxisAlignment: CrossAxisAlignment.end,
+                   children: [
+                     Text("${booking['payment']?['amount'] ?? '--'} TND", style: TextStyle(fontWeight: FontWeight.w700)),
+                     SizedBox(height: 4),
+                     Container(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        booking['status'] ?? 'N/A',
+                        style: TextStyle(fontSize: 10, color: statusColor, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                   ],
+                 )
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEmptyState(IconData icon, String title, String subtitle) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceWhite,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 60, color: AppTheme.textMuted),
+          ),
+          SizedBox(height: 24),
+          Text(title, style: Theme.of(context).textTheme.displaySmall),
+          SizedBox(height: 8),
+          Text(subtitle, style: TextStyle(color: AppTheme.textMuted)),
         ],
       ),
     );
@@ -2378,6 +2673,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_service.dart';
@@ -2398,6 +2694,8 @@ class _HomeScreenState extends State<HomeScreen>
   String userName = "User";
   String userEmail = "email@example.com";
   List<Map<String, dynamic>> availableCars = [];
+  LatLng? _userLocation;
+  final MapController _mapController = MapController();
   late AnimationController _animationController;
   late Animation<double> _animation;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -2406,7 +2704,7 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _loadUserData();
-    fetchAvailableCars();
+    _initLocationAndFetchCars();
 
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 1500),
@@ -2453,9 +2751,80 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  Future<void> _initLocationAndFetchCars() async {
+    await _getUserLocation();
+    await fetchAvailableCars();
+  }
+
+  Future<void> _getUserLocation() async {
+    try {
+      bool serviceEnabled;
+      LocationPermission permission;
+
+      serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+
+      if (permission == LocationPermission.deniedForever) return;
+
+      Position position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high);
+
+      if (mounted) {
+        setState(() {
+          _userLocation = LatLng(position.latitude, position.longitude);
+        });
+        _mapController.move(_userLocation!, 13);
+      }
+    } catch (e) {
+      print("Error fetching location: $e");
+    }
+  }
+
   Future<void> fetchAvailableCars() async {
     try {
       List<Map<String, dynamic>> cars = await ApiService.getAvailableCars();
+      
+      if (_userLocation != null) {
+        final distance = Distance();
+        cars.sort((a, b) {
+          double latA = 0.0, lngA = 0.0, latB = 0.0, lngB = 0.0;
+          if (a['location'] is Map) {
+            latA = double.tryParse(a['location']['latitude'].toString()) ?? 0.0;
+            lngA = double.tryParse(a['location']['longitude'].toString()) ?? 0.0;
+          } else if (a['location'] is String) {
+            var pts = a['location'].split(',');
+            if (pts.length == 2) {
+              latA = double.tryParse(pts[0].trim()) ?? 0.0;
+              lngA = double.tryParse(pts[1].trim()) ?? 0.0;
+            }
+          }
+          if (b['location'] is Map) {
+            latB = double.tryParse(b['location']['latitude'].toString()) ?? 0.0;
+            lngB = double.tryParse(b['location']['longitude'].toString()) ?? 0.0;
+          } else if (b['location'] is String) {
+            var pts = b['location'].split(',');
+            if (pts.length == 2) {
+              latB = double.tryParse(pts[0].trim()) ?? 0.0;
+              lngB = double.tryParse(pts[1].trim()) ?? 0.0;
+            }
+          }
+          
+          double distA = distance.as(LengthUnit.Meter, _userLocation!, LatLng(latA, lngA));
+          double distB = distance.as(LengthUnit.Meter, _userLocation!, LatLng(latB, lngB));
+          
+          a['calculatedDistance'] = distA;
+          b['calculatedDistance'] = distB;
+
+          return distA.compareTo(distB);
+        });
+      }
+
       setState(() => availableCars = cars);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2542,13 +2911,14 @@ class _HomeScreenState extends State<HomeScreen>
       child: Stack(
         children: [
           FlutterMap(
+            mapController: _mapController,
             options: MapOptions(
-              initialCenter: LatLng(36.8065, 10.1815),
+              initialCenter: _userLocation ?? LatLng(36.8065, 10.1815),
               initialZoom: 13,
             ),
             children: [
               TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
                 userAgentPackageName: 'com.example.fleetiq',
               ),
               MarkerLayer(
@@ -2638,7 +3008,11 @@ class _HomeScreenState extends State<HomeScreen>
               child: IconButton(
                 icon: Icon(Icons.my_location, color: AppTheme.textMain),
                 onPressed: () {
-                  // Center map on user location
+                  if (_userLocation != null) {
+                    _mapController.move(_userLocation!, 14);
+                  } else {
+                    _getUserLocation();
+                  }
                 },
               ),
             ),
@@ -2686,8 +3060,23 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildCarDetailsSheet(Map<String, dynamic> car) {
+    String distanceStr = "Unknown dist";
+    if (car['calculatedDistance'] != null) {
+      double d = car['calculatedDistance'];
+      if (d > 1000) {
+        distanceStr = "${(d / 1000).toStringAsFixed(1)} km away";
+      } else {
+        distanceStr = "${d.toInt()} m away";
+      }
+    }
+
+    List<String> allowedCities = [];
+    if (car['allowedCities'] != null && car['allowedCities'] is List) {
+      allowedCities = List<String>.from(car['allowedCities']);
+    }
+
     return Container(
-      height: MediaQuery.of(context).size.height * 0.6,
+      height: MediaQuery.of(context).size.height * 0.7,
       decoration: BoxDecoration(
         color: AppTheme.surfaceWhite,
         borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
@@ -2713,102 +3102,112 @@ class _HomeScreenState extends State<HomeScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Premium Photo Frame
+                    Center(
+                      child: Container(
+                        height: 160,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceGray,
+                          borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+                          child: (car['photo'] != null && car['photo'].isNotEmpty)
+                            ? Image.network(
+                                car['photo'],
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Icon(Icons.directions_car, size: 80, color: AppTheme.textMuted),
+                              )
+                            : Icon(Icons.directions_car, size: 80, color: AppTheme.textMuted),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 24),
+                    
+                    Text(
+                      car['marque'] ?? 'Unknown Car',
+                      style: Theme.of(context).textTheme.displayLarge,
+                    ),
+                    Text(
+                      car['matricule'] ?? 'N/A',
+                      style: TextStyle(fontSize: 16, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
+                    ),
+                    SizedBox(height: 16),
+
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
-                          width: 100,
-                          height: 100,
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
-                            color: AppTheme.brandLight,
-                            borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+                            color: AppTheme.brandBlue.withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(20),
                           ),
-                          child: Center(
-                            child: Icon(
-                              Icons.directions_car_outlined,
-                              size: 60,
-                              color: AppTheme.brandBlue,
-                            ),
-                          ),
-                        ),
-                        SizedBox(width: 20),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                car['marque'] ?? 'Unknown Car',
-                                style: Theme.of(context).textTheme.displaySmall,
-                              ),
-                              SizedBox(height: 8),
-                              Container(
-                                padding: EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.success.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.check_circle,
-                                        color: AppTheme.success, size: 16),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      "Available",
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: AppTheme.success,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                              Icon(Icons.location_on, color: AppTheme.brandBlue, size: 16),
+                              SizedBox(width: 4),
+                              Text(distanceStr, style: TextStyle(fontSize: 14, color: AppTheme.brandBlue, fontWeight: FontWeight.w600)),
                             ],
                           ),
                         ),
+                        SizedBox(width: 12),
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppTheme.success.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text("Available", style: TextStyle(fontSize: 14, color: AppTheme.success, fontWeight: FontWeight.w600)),
+                        ),
                       ],
                     ),
-                    SizedBox(height: 24),
-                    _buildDetailItem(Icons.credit_card, "Matricule",
-                        car['matricule'] ?? 'N/A'),
-                    Divider(height: 32, color: AppTheme.surfaceBorder),
-                    _buildDetailItem(
-                        Icons.location_on, "Location", "Current location"),
-                    SizedBox(height: 24),
-                    Container(
-                      height: 120,
-                      decoration: BoxDecoration(
-                        color: AppTheme.surfaceGray,
-                        borderRadius: BorderRadius.circular(AppTheme.radiusXl),
-                      ),
-                      child: Center(
-                        child: Text(
-                          "Map Preview Placeholder",
-                          style: TextStyle(color: AppTheme.textMuted),
+                    
+                    if (car['cityRestriction'] == true) ...[
+                      SizedBox(height: 16),
+                      Container(
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.starRating.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.starRating),
                         ),
-                      ),
-                    ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded, color: AppTheme.starRating),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                "City Restrictions: ${allowedCities.isEmpty ? 'Regional only' : allowedCities.join(', ')}",
+                                style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w500, fontSize: 13),
+                              ),
+                            )
+                          ],
+                        ),
+                      )
+                    ],
+
+                    if (car['description'] != null && car['description'].isNotEmpty) ...[
+                      SizedBox(height: 24),
+                      Text("Description", style: Theme.of(context).textTheme.bodyLarge),
+                      SizedBox(height: 8),
+                      Text(car['description'], style: TextStyle(color: AppTheme.textMuted, height: 1.5)),
+                    ],
+
                     SizedBox(height: 32),
                     ElevatedButton(
                       onPressed: () async {
-                        SharedPreferences prefs =
-                            await SharedPreferences.getInstance();
+                        SharedPreferences prefs = await SharedPreferences.getInstance();
                         await prefs.setString("selectedCarId", car['_id']);
-
                         if (!mounted) return;
-
+                        
                         String pickupLocation = '';
-                        if (car['location'] is String) {
-                          pickupLocation = car['location'];
-                        } else if (car['location'] is Map &&
-                            car['location']['latitude'] != null &&
-                            car['location']['longitude'] != null) {
-                          pickupLocation =
-                              "${car['location']['latitude']},${car['location']['longitude']}";
+                        if (car['location'] is String) pickupLocation = car['location'];
+                        else if (car['location'] is Map) {
+                          pickupLocation = "${car['location']['latitude']},${car['location']['longitude']}";
                         }
-
+                        
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -2819,15 +3218,13 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                         );
                       },
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: Size(double.infinity, 56),
-                      ),
+                      style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 56)),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.directions_car),
                           SizedBox(width: 8),
-                          Text('Book This Car'),
+                          Text('Book This Premium Car'),
                         ],
                       ),
                     ),
@@ -3409,6 +3806,190 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
+
+
+--- FILE: presentation/views/main_layout.dart ---
+
+import 'package:flutter/material.dart';
+import '../../constants/theme.dart';
+import 'home_screen.dart';
+import 'profile_screen.dart';
+import 'booking_dashboard_screen.dart';
+
+class MainLayout extends StatefulWidget {
+  @override
+  _MainLayoutState createState() => _MainLayoutState();
+}
+
+class _MainLayoutState extends State<MainLayout> {
+  int _currentIndex = 0;
+
+  final List<Widget> _screens = [
+    HomeScreen(),
+    _WalletPlaceholder(),
+    BookingDashboardScreen(),
+    ProfileScreen(),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        children: [
+          // Current screen
+          IndexedStack(
+            index: _currentIndex,
+            children: _screens,
+          ),
+
+          // Floating bottom navigation bar
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              margin: EdgeInsets.only(bottom: 24, left: 24, right: 24),
+              padding: EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceWhite,
+                borderRadius: BorderRadius.circular(50),
+                boxShadow: AppTheme.softShadow,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildNavItem(
+                    index: 0,
+                    activeIcon: Icons.home_filled,
+                    inactiveIcon: Icons.home_outlined,
+                    label: "Home",
+                  ),
+                  _buildNavItem(
+                    index: 1,
+                    activeIcon: Icons.account_balance_wallet,
+                    inactiveIcon: Icons.account_balance_wallet_outlined,
+                    label: "Wallet",
+                  ),
+                  _buildNavItem(
+                    index: 2,
+                    activeIcon: Icons.history,
+                    inactiveIcon: Icons.history,
+                    label: "Bookings",
+                  ),
+                  _buildNavItem(
+                    index: 3,
+                    activeIcon: Icons.person,
+                    inactiveIcon: Icons.person_outline,
+                    label: "Profile",
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavItem({
+    required int index,
+    required IconData activeIcon,
+    required IconData inactiveIcon,
+    required String label,
+  }) {
+    bool isActive = _currentIndex == index;
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _currentIndex = index;
+        });
+      },
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: Duration(milliseconds: 200),
+        curve: Curves.easeInOut,
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedScale(
+              scale: isActive ? 1.2 : 1.0,
+              duration: Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              child: Icon(
+                isActive ? activeIcon : inactiveIcon,
+                color: isActive ? AppTheme.brandBlue : AppTheme.textMuted,
+                size: 26,
+              ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                color: isActive ? AppTheme.brandBlue : AppTheme.textMuted,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Placeholder screen for Wallet tab
+class _WalletPlaceholder extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.surfaceGray,
+      appBar: AppBar(
+        title: Text("Wallet", style: Theme.of(context).textTheme.displaySmall),
+        backgroundColor: AppTheme.surfaceWhite,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+      ),
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.only(bottom: 100),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppTheme.brandLight,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.account_balance_wallet_outlined,
+                  color: AppTheme.brandBlue,
+                  size: 48,
+                ),
+              ),
+              SizedBox(height: 24),
+              Text(
+                "Wallet",
+                style: Theme.of(context).textTheme.displaySmall,
+              ),
+              SizedBox(height: 8),
+              Text(
+                "Payment methods & transactions\ncoming soon.",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppTheme.textMuted,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 
 --- FILE: presentation/views/payment_screen.dart ---
@@ -4951,10 +5532,7 @@ class _ReclamationScreenState extends State<ReclamationScreen>
 --- FILE: presentation/views/signup_screen.dart ---
 
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
-import 'package:image_picker/image_picker.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../constants/api_config.dart';
@@ -4979,13 +5557,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final TextEditingController _confirmPasswordController =
       TextEditingController();
 
-  File? _idCardImage;
-  File? _driverLicenseImage;
   String? _errorMessage;
-  int _currentStep = 0;
   bool _isLoading = false;
-
-  final ImagePicker _picker = ImagePicker();
+  bool _isEHouwiyaLoading = false;
 
   @override
   void dispose() {
@@ -4997,73 +5571,29 @@ class _SignUpScreenState extends State<SignUpScreen> {
     super.dispose();
   }
 
-  Future<File> compressImage(File file) async {
-    final bytes = await file.readAsBytes();
-    img.Image? image = img.decodeImage(bytes);
-
-    if (image != null) {
-      img.Image resized = img.copyResize(image, width: 800);
-      final compressedBytes = img.encodeJpg(resized, quality: 70);
-      final compressedFile = File(file.path)..writeAsBytesSync(compressedBytes);
-      return compressedFile;
-    } else {
-      return file;
-    }
-  }
-
-  Future<void> _pickImage(bool isIdCard) async {
-    final XFile? pickedFile = await _picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 60,
-      maxWidth: 800,
-    );
-
-    if (pickedFile != null) {
-      setState(() {
-        if (isIdCard) {
-          _idCardImage = File(pickedFile.path);
-        } else {
-          _driverLicenseImage = File(pickedFile.path);
-        }
-      });
-    }
-  }
-
   void _signUpWithEmailAndPassword() async {
-    if (_formKey.currentState!.validate() &&
-        _idCardImage != null &&
-        _driverLicenseImage != null) {
+    if (_formKey.currentState!.validate()) {
       setState(() {
         _isLoading = true;
         _errorMessage = null;
       });
 
       try {
-        const String baseUrl = "$userEndpoint/signup";
-        var uri = Uri.parse(baseUrl);
+        final url = Uri.parse("$userEndpoint/signup");
 
-        File compressedIdCard = await compressImage(_idCardImage!);
-        File compressedDriverLicense =
-            await compressImage(_driverLicenseImage!);
+        final response = await http.post(
+          url,
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode({
+            "fullName": _fullNameController.text.trim(),
+            "email": _emailController.text.trim(),
+            "phone": _phoneNumberController.text.trim(),
+            "password": _passwordController.text.trim(),
+          }),
+        );
 
-        var request = http.MultipartRequest('POST', uri);
-
-        request.fields['fullName'] = _fullNameController.text.trim();
-        request.fields['email'] = _emailController.text.trim();
-        request.fields['phone'] = _phoneNumberController.text.trim();
-        request.fields['password'] = _passwordController.text.trim();
-
-        request.files.add(
-            await http.MultipartFile.fromPath("cin", compressedIdCard.path));
-        request.files.add(await http.MultipartFile.fromPath(
-            "permis", compressedDriverLicense.path));
-
-        var streamedResponse =
-            await request.send().timeout(Duration(seconds: 60));
-        var responseData = await streamedResponse.stream.bytesToString();
-
-        if (streamedResponse.statusCode == 201) {
-          var data = jsonDecode(responseData);
+        if (response.statusCode == 201) {
+          var data = jsonDecode(response.body);
 
           SharedPreferences prefs = await SharedPreferences.getInstance();
           await prefs.setString("userId", data["user"]["_id"]);
@@ -5077,7 +5607,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
             SnackBar(content: Text("Signup Successful! Please Login.")),
           );
         } else {
-          var errorData = jsonDecode(responseData);
+          var errorData = jsonDecode(response.body);
           setState(() {
             _errorMessage = errorData["message"] ?? "Signup failed. Try again.";
           });
@@ -5091,12 +5621,81 @@ class _SignUpScreenState extends State<SignUpScreen> {
       setState(() {
         _isLoading = false;
       });
-    } else {
-      setState(() {
-        _errorMessage =
-            "All fields, including CIN & Permis images, are required!";
-      });
     }
+  }
+
+  void _signUpWithEHouwiya() async {
+    setState(() {
+      _isEHouwiyaLoading = true;
+    });
+
+    // Mock: simulate e-Houwiya authentication delay
+    await Future.delayed(Duration(seconds: 2));
+
+    setState(() {
+      _isEHouwiyaLoading = false;
+    });
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radius2xl),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppTheme.success.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.check_circle,
+                    color: AppTheme.success, size: 48),
+              ),
+              SizedBox(height: 20),
+              Text(
+                "e-Houwiya Authentication Successful (Mocked)",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textMain,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                "Your identity has been verified via Mobile ID.",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: AppTheme.textMuted,
+                ),
+              ),
+              SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => HomeScreen()),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  minimumSize: Size(double.infinity, 48),
+                ),
+                child: Text("Continue"),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -5126,7 +5725,40 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
-                SizedBox(height: 40),
+                SizedBox(height: 32),
+
+                // e-Houwiya Button
+                FadeInUp(
+                  duration: Duration(milliseconds: 700),
+                  child: _buildEHouwiyaButton(),
+                ),
+
+                SizedBox(height: 24),
+
+                // Divider
+                FadeInUp(
+                  duration: Duration(milliseconds: 750),
+                  child: Row(
+                    children: [
+                      Expanded(
+                          child: Divider(color: AppTheme.surfaceBorder)),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          "Or sign up with email",
+                          style: TextStyle(
+                              color: AppTheme.textMuted, fontSize: 14),
+                        ),
+                      ),
+                      Expanded(
+                          child: Divider(color: AppTheme.surfaceBorder)),
+                    ],
+                  ),
+                ),
+
+                SizedBox(height: 24),
+
+                // Standard Form
                 FadeInUp(
                   duration: Duration(milliseconds: 800),
                   child: Form(
@@ -5134,86 +5766,67 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildStepper(),
-                        SizedBox(height: 32),
-                        if (_currentStep == 0) ...[
-                          CustomTextField(
-                            controller: _fullNameController,
-                            hintText: "Full Name",
-                            icon: Icons.person_outline,
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty)
-                                return 'Please enter your full name';
-                              return null;
-                            },
-                          ),
-                          SizedBox(height: 20),
-                          CustomTextField(
-                            controller: _emailController,
-                            hintText: "Email",
-                            icon: Icons.email_outlined,
-                            keyboardType: TextInputType.emailAddress,
-                            validator: (value) {
-                              if (value == null || !value.contains('@'))
-                                return 'Please enter a valid email';
-                              return null;
-                            },
-                          ),
-                          SizedBox(height: 20),
-                          CustomTextField(
-                            controller: _phoneNumberController,
-                            hintText: "Phone Number",
-                            icon: Icons.phone_outlined,
-                            keyboardType: TextInputType.phone,
-                            validator: (value) {
-                              if (value == null || value.length < 8)
-                                return 'Please enter a valid phone number';
-                              return null;
-                            },
-                          ),
-                          SizedBox(height: 20),
-                          CustomTextField(
-                            controller: _passwordController,
-                            hintText: "Password",
-                            icon: Icons.lock_outline,
-                            obscureText: true,
-                            validator: (value) {
-                              if (value == null || value.length < 6)
-                                return 'Password must be at least 6 characters';
-                              return null;
-                            },
-                          ),
-                          SizedBox(height: 10),
-                          PasswordStrengthIndicator(
-                              password: _passwordController.text),
-                          SizedBox(height: 20),
-                          CustomTextField(
-                            controller: _confirmPasswordController,
-                            hintText: "Confirm Password",
-                            icon: Icons.lock_outline,
-                            obscureText: true,
-                            validator: (value) {
-                              if (value != _passwordController.text)
-                                return 'Passwords do not match';
-                              return null;
-                            },
-                          ),
-                        ],
-                        if (_currentStep == 1) ...[
-                          _buildImagePicker(
-                            label: "Upload Front of ID Card",
-                            imageFile: _idCardImage,
-                            onTap: () => _pickImage(true),
-                            icon: Icons.credit_card_outlined,
-                          ),
-                          SizedBox(height: 20),
-                          _buildImagePicker(
-                            label: "Upload Driver's License",
-                            imageFile: _driverLicenseImage,
-                            onTap: () => _pickImage(false),
-                            icon: Icons.drive_eta_outlined,
-                          ),
-                        ],
+                        CustomTextField(
+                          controller: _fullNameController,
+                          hintText: "Full Name",
+                          icon: Icons.person_outline,
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty)
+                              return 'Please enter your full name';
+                            return null;
+                          },
+                        ),
+                        SizedBox(height: 20),
+                        CustomTextField(
+                          controller: _emailController,
+                          hintText: "Email",
+                          icon: Icons.email_outlined,
+                          keyboardType: TextInputType.emailAddress,
+                          validator: (value) {
+                            if (value == null || !value.contains('@'))
+                              return 'Please enter a valid email';
+                            return null;
+                          },
+                        ),
+                        SizedBox(height: 20),
+                        CustomTextField(
+                          controller: _phoneNumberController,
+                          hintText: "Phone Number",
+                          icon: Icons.phone_outlined,
+                          keyboardType: TextInputType.phone,
+                          validator: (value) {
+                            if (value == null || value.length < 8)
+                              return 'Please enter a valid phone number';
+                            return null;
+                          },
+                        ),
+                        SizedBox(height: 20),
+                        CustomTextField(
+                          controller: _passwordController,
+                          hintText: "Password",
+                          icon: Icons.lock_outline,
+                          obscureText: true,
+                          validator: (value) {
+                            if (value == null || value.length < 6)
+                              return 'Password must be at least 6 characters';
+                            return null;
+                          },
+                        ),
+                        SizedBox(height: 10),
+                        PasswordStrengthIndicator(
+                            password: _passwordController.text),
+                        SizedBox(height: 20),
+                        CustomTextField(
+                          controller: _confirmPasswordController,
+                          hintText: "Confirm Password",
+                          icon: Icons.lock_outline,
+                          obscureText: true,
+                          validator: (value) {
+                            if (value != _passwordController.text)
+                              return 'Passwords do not match';
+                            return null;
+                          },
+                        ),
                         if (_errorMessage != null)
                           Padding(
                             padding: EdgeInsets.only(top: 24),
@@ -5231,15 +5844,31 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                   Expanded(
                                     child: Text(
                                       _errorMessage!,
-                                      style: TextStyle(color: Colors.redAccent),
+                                      style:
+                                          TextStyle(color: Colors.redAccent),
                                     ),
                                   ),
                                 ],
                               ),
                             ),
                           ),
-                        SizedBox(height: 40),
-                        _buildActionButton(),
+                        SizedBox(height: 32),
+                        ElevatedButton(
+                          onPressed:
+                              _isLoading ? null : _signUpWithEmailAndPassword,
+                          child: _isLoading
+                              ? SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                      color: AppTheme.surfaceWhite,
+                                      strokeWidth: 2),
+                                )
+                              : Text("Create Account"),
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: Size(double.infinity, 56),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -5283,142 +5912,71 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
-  Widget _buildStepper() {
-    return Row(
-      children: [
-        _buildStepIndicator(0, "Details", Icons.person_outline),
-        Expanded(child: Divider(color: AppTheme.surfaceBorder, thickness: 2)),
-        _buildStepIndicator(1, "Docs", Icons.file_present_outlined),
-      ],
-    );
-  }
+  Widget _buildEHouwiyaButton() {
+    const Color tunisianRed = Color(0xFFE70013);
 
-  Widget _buildStepIndicator(int step, String label, IconData icon) {
-    bool isActive = _currentStep >= step;
-    return Column(
-      children: [
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isActive ? AppTheme.brandBlue : AppTheme.surfaceWhite,
-            border: Border.all(
-              color: isActive ? AppTheme.brandBlue : AppTheme.surfaceBorder,
-              width: 2,
-            ),
-          ),
-          child: Icon(
-            icon,
-            color: isActive ? AppTheme.surfaceWhite : AppTheme.textMuted,
-          ),
-        ),
-        SizedBox(height: 8),
-        Text(
-          label,
-          style: TextStyle(
-            color: isActive ? AppTheme.brandBlue : AppTheme.textMuted,
-            fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-            fontSize: 12,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildImagePicker({
-    required String label,
-    required File? imageFile,
-    required VoidCallback onTap,
-    required IconData icon,
-  }) {
     return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 140,
+      onTap: _isEHouwiyaLoading ? null : _signUpWithEHouwiya,
+      child: AnimatedContainer(
+        duration: Duration(milliseconds: 200),
+        padding: EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
           color: AppTheme.surfaceWhite,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-              color: AppTheme.surfaceBorder, style: BorderStyle.solid),
+          borderRadius: BorderRadius.circular(9999),
+          border: Border.all(color: tunisianRed, width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: tunisianRed.withOpacity(0.1),
+              blurRadius: 16,
+              offset: Offset(0, 4),
+            ),
+          ],
         ),
-        child: imageFile == null
-            ? Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.brandLight,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(icon, color: AppTheme.brandBlue, size: 28),
-                  ),
-                  SizedBox(height: 12),
-                  Text(label,
-                      style: TextStyle(
-                          color: AppTheme.textMain,
-                          fontWeight: FontWeight.w600)),
-                  SizedBox(height: 4),
-                  Text("Tap to select photo",
-                      style: TextStyle(
-                          color: AppTheme.textMuted, fontSize: 13)),
-                ],
-              )
-            : Stack(
-                fit: StackFit.expand,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(15),
-                    child: Image.file(
-                      imageFile,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Container(
-                      padding: EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: AppTheme.success,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(Icons.check,
-                          color: AppTheme.surfaceWhite, size: 16),
-                    ),
-                  ),
-                ],
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_isEHouwiyaLoading) ...[
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  color: tunisianRed,
+                  strokeWidth: 2,
+                ),
               ),
+              SizedBox(width: 12),
+              Text(
+                "Authenticating...",
+                style: TextStyle(
+                  color: tunisianRed,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ] else ...[
+              Container(
+                padding: EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: tunisianRed,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.fingerprint,
+                    color: AppTheme.surfaceWhite, size: 20),
+              ),
+              SizedBox(width: 12),
+              Text(
+                "Sign up with e-Houwiya (Mobile ID)",
+                style: TextStyle(
+                  color: tunisianRed,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
-  }
-
-  Widget _buildActionButton() {
-    return ElevatedButton(
-      onPressed: _isLoading
-          ? null
-          : (_currentStep == 0 ? _nextStep : _signUpWithEmailAndPassword),
-      child: _isLoading
-          ? SizedBox(
-              height: 20,
-              width: 20,
-              child: CircularProgressIndicator(
-                  color: AppTheme.surfaceWhite, strokeWidth: 2),
-            )
-          : Text(_currentStep == 0 ? "Next" : "Complete Sign Up"),
-      style: ElevatedButton.styleFrom(
-        minimumSize: Size(double.infinity, 56),
-      ),
-    );
-  }
-
-  void _nextStep() {
-    if (_formKey.currentState!.validate()) {
-      setState(() {
-        _currentStep = 1;
-      });
-    }
   }
 }
 
@@ -5455,7 +6013,7 @@ class _SplashScreenState extends State<SplashScreen> {
       backgroundColor: Colors.white, 
       body: Center(
         child: Image.asset(
-          'assets/KariaGo.gif', 
+          'assets/NexDrive.gif', 
           width: 200, 
           height: 200,
           fit: BoxFit.contain,
@@ -5791,6 +6349,26 @@ class ApiService {
     } catch (e) {
       print('❌ Error fetching available cars: $e');
       return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>> getMyBookings(String userId) async {
+    try {
+      final url = Uri.parse('$bookingEndpoint/my-bookings?userId=$userId');
+
+      final response = await http.get(
+        url,
+        headers: await _getHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception("Failed to fetch my bookings: ${response.body}");
+      }
+    } catch (e) {
+      print('❌ Error fetching bookings: $e');
+      return {'active': [], 'history': []};
     }
   }
 

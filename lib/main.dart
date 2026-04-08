@@ -11,7 +11,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'KariaGo',
+      title: 'NexDrive',
       theme: AppTheme.lightTheme,
       home: SplashScreen(), // Start with Splash Screen
     );

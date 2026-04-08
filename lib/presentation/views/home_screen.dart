@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_service.dart';
@@ -21,6 +22,8 @@ class _HomeScreenState extends State<HomeScreen>
   String userName = "User";
   String userEmail = "email@example.com";
   List<Map<String, dynamic>> availableCars = [];
+  LatLng? _userLocation;
+  final MapController _mapController = MapController();
   late AnimationController _animationController;
   late Animation<double> _animation;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -29,7 +32,7 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _loadUserData();
-    fetchAvailableCars();
+    _initLocationAndFetchCars();
 
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 1500),
@@ -76,9 +79,80 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  Future<void> _initLocationAndFetchCars() async {
+    await _getUserLocation();
+    await fetchAvailableCars();
+  }
+
+  Future<void> _getUserLocation() async {
+    try {
+      bool serviceEnabled;
+      LocationPermission permission;
+
+      serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+
+      if (permission == LocationPermission.deniedForever) return;
+
+      Position position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high);
+
+      if (mounted) {
+        setState(() {
+          _userLocation = LatLng(position.latitude, position.longitude);
+        });
+        _mapController.move(_userLocation!, 13);
+      }
+    } catch (e) {
+      print("Error fetching location: $e");
+    }
+  }
+
   Future<void> fetchAvailableCars() async {
     try {
       List<Map<String, dynamic>> cars = await ApiService.getAvailableCars();
+      
+      if (_userLocation != null) {
+        final distance = Distance();
+        cars.sort((a, b) {
+          double latA = 0.0, lngA = 0.0, latB = 0.0, lngB = 0.0;
+          if (a['location'] is Map) {
+            latA = double.tryParse(a['location']['latitude'].toString()) ?? 0.0;
+            lngA = double.tryParse(a['location']['longitude'].toString()) ?? 0.0;
+          } else if (a['location'] is String) {
+            var pts = a['location'].split(',');
+            if (pts.length == 2) {
+              latA = double.tryParse(pts[0].trim()) ?? 0.0;
+              lngA = double.tryParse(pts[1].trim()) ?? 0.0;
+            }
+          }
+          if (b['location'] is Map) {
+            latB = double.tryParse(b['location']['latitude'].toString()) ?? 0.0;
+            lngB = double.tryParse(b['location']['longitude'].toString()) ?? 0.0;
+          } else if (b['location'] is String) {
+            var pts = b['location'].split(',');
+            if (pts.length == 2) {
+              latB = double.tryParse(pts[0].trim()) ?? 0.0;
+              lngB = double.tryParse(pts[1].trim()) ?? 0.0;
+            }
+          }
+          
+          double distA = distance.as(LengthUnit.Meter, _userLocation!, LatLng(latA, lngA));
+          double distB = distance.as(LengthUnit.Meter, _userLocation!, LatLng(latB, lngB));
+          
+          a['calculatedDistance'] = distA;
+          b['calculatedDistance'] = distB;
+
+          return distA.compareTo(distB);
+        });
+      }
+
       setState(() => availableCars = cars);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -165,13 +239,14 @@ class _HomeScreenState extends State<HomeScreen>
       child: Stack(
         children: [
           FlutterMap(
+            mapController: _mapController,
             options: MapOptions(
-              initialCenter: LatLng(36.8065, 10.1815),
+              initialCenter: _userLocation ?? LatLng(36.8065, 10.1815),
               initialZoom: 13,
             ),
             children: [
               TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
                 userAgentPackageName: 'com.example.fleetiq',
               ),
               MarkerLayer(
@@ -261,7 +336,11 @@ class _HomeScreenState extends State<HomeScreen>
               child: IconButton(
                 icon: Icon(Icons.my_location, color: AppTheme.textMain),
                 onPressed: () {
-                  // Center map on user location
+                  if (_userLocation != null) {
+                    _mapController.move(_userLocation!, 14);
+                  } else {
+                    _getUserLocation();
+                  }
                 },
               ),
             ),
@@ -309,8 +388,23 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildCarDetailsSheet(Map<String, dynamic> car) {
+    String distanceStr = "Unknown dist";
+    if (car['calculatedDistance'] != null) {
+      double d = car['calculatedDistance'];
+      if (d > 1000) {
+        distanceStr = "${(d / 1000).toStringAsFixed(1)} km away";
+      } else {
+        distanceStr = "${d.toInt()} m away";
+      }
+    }
+
+    List<String> allowedCities = [];
+    if (car['allowedCities'] != null && car['allowedCities'] is List) {
+      allowedCities = List<String>.from(car['allowedCities']);
+    }
+
     return Container(
-      height: MediaQuery.of(context).size.height * 0.6,
+      height: MediaQuery.of(context).size.height * 0.7,
       decoration: BoxDecoration(
         color: AppTheme.surfaceWhite,
         borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
@@ -336,102 +430,112 @@ class _HomeScreenState extends State<HomeScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Premium Photo Frame
+                    Center(
+                      child: Container(
+                        height: 160,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceGray,
+                          borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+                          child: (car['photo'] != null && car['photo'].isNotEmpty)
+                            ? Image.network(
+                                car['photo'],
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Icon(Icons.directions_car, size: 80, color: AppTheme.textMuted),
+                              )
+                            : Icon(Icons.directions_car, size: 80, color: AppTheme.textMuted),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 24),
+                    
+                    Text(
+                      car['marque'] ?? 'Unknown Car',
+                      style: Theme.of(context).textTheme.displayLarge,
+                    ),
+                    Text(
+                      car['matricule'] ?? 'N/A',
+                      style: TextStyle(fontSize: 16, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
+                    ),
+                    SizedBox(height: 16),
+
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
-                          width: 100,
-                          height: 100,
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
-                            color: AppTheme.brandLight,
-                            borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+                            color: AppTheme.brandBlue.withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(20),
                           ),
-                          child: Center(
-                            child: Icon(
-                              Icons.directions_car_outlined,
-                              size: 60,
-                              color: AppTheme.brandBlue,
-                            ),
-                          ),
-                        ),
-                        SizedBox(width: 20),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                car['marque'] ?? 'Unknown Car',
-                                style: Theme.of(context).textTheme.displaySmall,
-                              ),
-                              SizedBox(height: 8),
-                              Container(
-                                padding: EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.success.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.check_circle,
-                                        color: AppTheme.success, size: 16),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      "Available",
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: AppTheme.success,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                              Icon(Icons.location_on, color: AppTheme.brandBlue, size: 16),
+                              SizedBox(width: 4),
+                              Text(distanceStr, style: TextStyle(fontSize: 14, color: AppTheme.brandBlue, fontWeight: FontWeight.w600)),
                             ],
                           ),
                         ),
+                        SizedBox(width: 12),
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppTheme.success.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text("Available", style: TextStyle(fontSize: 14, color: AppTheme.success, fontWeight: FontWeight.w600)),
+                        ),
                       ],
                     ),
-                    SizedBox(height: 24),
-                    _buildDetailItem(Icons.credit_card, "Matricule",
-                        car['matricule'] ?? 'N/A'),
-                    Divider(height: 32, color: AppTheme.surfaceBorder),
-                    _buildDetailItem(
-                        Icons.location_on, "Location", "Current location"),
-                    SizedBox(height: 24),
-                    Container(
-                      height: 120,
-                      decoration: BoxDecoration(
-                        color: AppTheme.surfaceGray,
-                        borderRadius: BorderRadius.circular(AppTheme.radiusXl),
-                      ),
-                      child: Center(
-                        child: Text(
-                          "Map Preview Placeholder",
-                          style: TextStyle(color: AppTheme.textMuted),
+                    
+                    if (car['cityRestriction'] == true) ...[
+                      SizedBox(height: 16),
+                      Container(
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.starRating.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.starRating),
                         ),
-                      ),
-                    ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded, color: AppTheme.starRating),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                "City Restrictions: ${allowedCities.isEmpty ? 'Regional only' : allowedCities.join(', ')}",
+                                style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w500, fontSize: 13),
+                              ),
+                            )
+                          ],
+                        ),
+                      )
+                    ],
+
+                    if (car['description'] != null && car['description'].isNotEmpty) ...[
+                      SizedBox(height: 24),
+                      Text("Description", style: Theme.of(context).textTheme.bodyLarge),
+                      SizedBox(height: 8),
+                      Text(car['description'], style: TextStyle(color: AppTheme.textMuted, height: 1.5)),
+                    ],
+
                     SizedBox(height: 32),
                     ElevatedButton(
                       onPressed: () async {
-                        SharedPreferences prefs =
-                            await SharedPreferences.getInstance();
+                        SharedPreferences prefs = await SharedPreferences.getInstance();
                         await prefs.setString("selectedCarId", car['_id']);
-
                         if (!mounted) return;
-
+                        
                         String pickupLocation = '';
-                        if (car['location'] is String) {
-                          pickupLocation = car['location'];
-                        } else if (car['location'] is Map &&
-                            car['location']['latitude'] != null &&
-                            car['location']['longitude'] != null) {
-                          pickupLocation =
-                              "${car['location']['latitude']},${car['location']['longitude']}";
+                        if (car['location'] is String) pickupLocation = car['location'];
+                        else if (car['location'] is Map) {
+                          pickupLocation = "${car['location']['latitude']},${car['location']['longitude']}";
                         }
-
+                        
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -442,15 +546,13 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                         );
                       },
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: Size(double.infinity, 56),
-                      ),
+                      style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 56)),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.directions_car),
                           SizedBox(width: 8),
-                          Text('Book This Car'),
+                          Text('Book This Premium Car'),
                         ],
                       ),
                     ),

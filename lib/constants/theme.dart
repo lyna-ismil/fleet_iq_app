@@ -3,8 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   // Color Palette
-  static const Color brandBlue = Color(0xFF0A66FF);
-  static const Color brandLight = Color(0xFFEAF2FF);
+  static const Color brandBlue = Color(0xFF111111);
+  static const Color brandLight = Color(0xFFF4F4F5);
   static const Color textMain = Color(0xFF1A1B1E);
   static const Color textMuted = Color(0xFF8A8D93);
   static const Color surfaceWhite = Color(0xFFFFFFFF);

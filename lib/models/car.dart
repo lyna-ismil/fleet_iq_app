@@ -4,6 +4,10 @@ class Car {
   final String matricule;
   final String energyType;
   final String location;
+  final String? photo;
+  final String? description;
+  final bool cityRestriction;
+  final List<String> allowedCities;
 
   Car({
     required this.id,
@@ -11,5 +15,9 @@ class Car {
     required this.matricule,
     required this.energyType,
     required this.location,
+    this.photo,
+    this.description,
+    this.cityRestriction = false,
+    this.allowedCities = const [],
   });
 }

@@ -135,6 +135,26 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> getMyBookings(String userId) async {
+    try {
+      final url = Uri.parse('$bookingEndpoint/my-bookings?userId=$userId');
+
+      final response = await http.get(
+        url,
+        headers: await _getHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception("Failed to fetch my bookings: ${response.body}");
+      }
+    } catch (e) {
+      print('❌ Error fetching bookings: $e');
+      return {'active': [], 'history': []};
+    }
+  }
+
   static Future<Map<String, dynamic>> getUserProfile(String userId) async {
     final url = Uri.parse('$userEndpoint/$userId');
 
