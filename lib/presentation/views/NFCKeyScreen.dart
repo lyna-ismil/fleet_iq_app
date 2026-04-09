@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 import 'package:flutter_nfc_kit/flutter_nfc_kit.dart';
 import 'package:ndef/ndef.dart' as ndef;
 import 'package:http/http.dart' as http;
 
 import '../../constants/api_config.dart';
 import '../../constants/theme.dart';
+import '../../services/api_service.dart';
 
-class NFCKeyScreen extends StatefulWidget {
+class NFCKeyScreen extends ConsumerStatefulWidget {
   final String carId;
   final DateTime startDate;
   final DateTime endDate;
@@ -31,10 +32,10 @@ class NFCKeyScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  _NFCKeyScreenState createState() => _NFCKeyScreenState();
+  ConsumerState<NFCKeyScreen> createState() => _NFCKeyScreenState();
 }
 
-class _NFCKeyScreenState extends State<NFCKeyScreen>
+class _NFCKeyScreenState extends ConsumerState<NFCKeyScreen>
     with SingleTickerProviderStateMixin {
   late String nfcKey;
   Timer? countdownTimer;
@@ -48,7 +49,7 @@ class _NFCKeyScreenState extends State<NFCKeyScreen>
   @override
   void initState() {
     super.initState();
-    generateNfcKey();
+    _fetchNfcKeyFromServer();
     startCountdown();
     _fetchCarDetails();
 
@@ -65,9 +66,13 @@ class _NFCKeyScreenState extends State<NFCKeyScreen>
     _animationController.repeat(reverse: true);
   }
 
-  void generateNfcKey() {
-    final raw = '${widget.carId}|${widget.startDate.millisecondsSinceEpoch}|${Random().nextInt(999999)}';
-    nfcKey = base64Url.encode(utf8.encode(raw));
+  Future<void> _fetchNfcKeyFromServer() async {
+    final result = await ApiService.generateNfcKey(widget.bookingId);
+    if (result != null) {
+      setState(() {
+        nfcKey = result['nfcKey'];
+      });
+    }
   }
 
   void startCountdown() {

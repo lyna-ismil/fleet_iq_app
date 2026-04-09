@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'NFCKeyScreen.dart';
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
 
-import '../../constants/api_config.dart';
 import '../../constants/theme.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import './widgets/custom_text_field.dart';
 
-class PaymentScreen extends StatefulWidget {
+class PaymentScreen extends ConsumerStatefulWidget {
   final double totalAmount;
   final String carId;
   final DateTime startDate;
@@ -29,10 +27,10 @@ class PaymentScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  _PaymentScreenState createState() => _PaymentScreenState();
+  ConsumerState<PaymentScreen> createState() => _PaymentScreenState();
 }
 
-class _PaymentScreenState extends State<PaymentScreen>
+class _PaymentScreenState extends ConsumerState<PaymentScreen>
     with SingleTickerProviderStateMixin {
   String selectedMethod = "Credit Card";
   final _formKey = GlobalKey<FormState>();
@@ -81,8 +79,7 @@ class _PaymentScreenState extends State<PaymentScreen>
   }
 
   Future<dynamic> _storeBooking() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getString('userId');
+    final userId = ref.read(authProvider).userId;
 
     if (userId == null) return null;
 

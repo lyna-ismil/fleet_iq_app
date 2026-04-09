@@ -1,38 +1,38 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../../services/api_service.dart';
 import '../../constants/theme.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/car_provider.dart';
+import '../../providers/notification_provider.dart';
 import 'login_screen.dart';
 import 'estimation_screen.dart';
 import 'profile_screen.dart';
 import 'reclamation_screen.dart';
 import 'AboutUsScreen.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   @override
-  _HomeScreenState createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
+class _HomeScreenState extends ConsumerState<HomeScreen>
     with SingleTickerProviderStateMixin {
-  String userName = "User";
-  String userEmail = "email@example.com";
-  List<Map<String, dynamic>> availableCars = [];
   LatLng? _userLocation;
   final MapController _mapController = MapController();
   late AnimationController _animationController;
   late Animation<double> _animation;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
-    _loadUserData();
-    _initLocationAndFetchCars();
+    _getUserLocation();
 
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 1500),
@@ -45,43 +45,18 @@ class _HomeScreenState extends State<HomeScreen>
     );
 
     _animationController.forward();
+
+    // Auto-refresh paired cars every 30 seconds
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      ref.invalidate(pairedCarsProvider);
+    });
   }
 
   @override
   void dispose() {
     _animationController.dispose();
+    _refreshTimer?.cancel();
     super.dispose();
-  }
-
-  Future<void> _loadUserData() async {
-    try {
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      String? userId = prefs.getString("userId");
-
-      if (userId == null) {
-        setState(() {
-          userName = "User";
-          userEmail = "email@example.com";
-        });
-        return;
-      }
-
-      var userData = await ApiService.getUserProfile(userId);
-
-      if (userData != null) {
-        setState(() {
-          userName = userData["fullName"] ?? "User";
-          userEmail = userData["email"] ?? "email@example.com";
-        });
-      }
-    } catch (e) {
-      print("❌ Error loading user data: $e");
-    }
-  }
-
-  Future<void> _initLocationAndFetchCars() async {
-    await _getUserLocation();
-    await fetchAvailableCars();
   }
 
   Future<void> _getUserLocation() async {
@@ -111,59 +86,6 @@ class _HomeScreenState extends State<HomeScreen>
       }
     } catch (e) {
       print("Error fetching location: $e");
-    }
-  }
-
-  Future<void> fetchAvailableCars() async {
-    try {
-      List<Map<String, dynamic>> cars = await ApiService.getAvailableCars();
-      
-      if (_userLocation != null) {
-        final distance = Distance();
-        cars.sort((a, b) {
-          double latA = 0.0, lngA = 0.0, latB = 0.0, lngB = 0.0;
-          if (a['location'] is Map) {
-            latA = double.tryParse(a['location']['latitude'].toString()) ?? 0.0;
-            lngA = double.tryParse(a['location']['longitude'].toString()) ?? 0.0;
-          } else if (a['location'] is String) {
-            var pts = a['location'].split(',');
-            if (pts.length == 2) {
-              latA = double.tryParse(pts[0].trim()) ?? 0.0;
-              lngA = double.tryParse(pts[1].trim()) ?? 0.0;
-            }
-          }
-          if (b['location'] is Map) {
-            latB = double.tryParse(b['location']['latitude'].toString()) ?? 0.0;
-            lngB = double.tryParse(b['location']['longitude'].toString()) ?? 0.0;
-          } else if (b['location'] is String) {
-            var pts = b['location'].split(',');
-            if (pts.length == 2) {
-              latB = double.tryParse(pts[0].trim()) ?? 0.0;
-              lngB = double.tryParse(pts[1].trim()) ?? 0.0;
-            }
-          }
-          
-          double distA = distance.as(LengthUnit.Meter, _userLocation!, LatLng(latA, lngA));
-          double distB = distance.as(LengthUnit.Meter, _userLocation!, LatLng(latB, lngB));
-          
-          a['calculatedDistance'] = distA;
-          b['calculatedDistance'] = distB;
-
-          return distA.compareTo(distB);
-        });
-      }
-
-      setState(() => availableCars = cars);
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error loading available cars'),
-          backgroundColor: Colors.redAccent,
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      );
     }
   }
 
@@ -230,7 +152,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildMapWithMarkers() {
+  Widget _buildMapWithMarkers(List<Car> availableCars) {
     return ClipRRect(
       borderRadius: BorderRadius.only(
         topLeft: Radius.circular(30),
@@ -251,31 +173,13 @@ class _HomeScreenState extends State<HomeScreen>
               ),
               MarkerLayer(
                 markers: availableCars
-                    .where((car) =>
-                        car['location'] != null && car['car_work'] == true)
+                    .where((car) => car.lastKnownLocation != null)
                     .map((car) {
-                      double latitude = 0.0;
-                      double longitude = 0.0;
-
-                      if (car['location'] is Map) {
-                        latitude = double.tryParse(
-                                car['location']['latitude'].toString()) ??
-                            0.0;
-                        longitude = double.tryParse(
-                                car['location']['longitude'].toString()) ??
-                            0.0;
-                      } else if (car['location'] is String) {
-                        var parts = car['location'].split(',');
-                        if (parts.length == 2) {
-                          latitude = double.tryParse(parts[0].trim()) ?? 0.0;
-                          longitude = double.tryParse(parts[1].trim()) ?? 0.0;
-                        }
-                      }
-
-                      if (latitude == 0.0 && longitude == 0.0) return null;
+                      final lat = car.lastKnownLocation!.latitude;
+                      final lng = car.lastKnownLocation!.longitude;
 
                       return Marker(
-                        point: LatLng(latitude, longitude),
+                        point: LatLng(lat, lng),
                         width: 60,
                         height: 60,
                         child: TweenAnimationBuilder<double>(
@@ -283,6 +187,15 @@ class _HomeScreenState extends State<HomeScreen>
                           duration: Duration(milliseconds: 800),
                           curve: Curves.elasticOut,
                           builder: (context, value, child) {
+                            var pinColor = AppTheme.success;
+                            var pinIcon = Icons.directions_car;
+                            if (car.healthStatus == "WARN") {
+                              pinColor = Colors.orange;
+                              pinIcon = Icons.warning_amber_rounded;
+                            } else if (car.healthStatus == "CRITICAL") {
+                              pinColor = AppTheme.danger;
+                              pinIcon = Icons.error_outline;
+                            }
                             return Transform.scale(
                               scale: value,
                               child: GestureDetector(
@@ -300,18 +213,10 @@ class _HomeScreenState extends State<HomeScreen>
                                     color: AppTheme.surfaceWhite,
                                     shape: BoxShape.circle,
                                     boxShadow: AppTheme.softShadow,
+                                    border: Border.all(color: pinColor, width: 2),
                                   ),
                                   padding: EdgeInsets.all(8),
-                                  child: Image.network(
-                                    'https://cdn-icons-png.flaticon.com/512/5385/5385430.png',
-                                    width: 40,
-                                    height: 40,
-                                    fit: BoxFit.contain,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Icon(Icons.directions_car,
-                                          color: AppTheme.brandBlue, size: 40);
-                                    },
-                                  ),
+                                  child: Icon(pinIcon, color: pinColor, size: 24),
                                 ),
                               ),
                             );
@@ -319,7 +224,6 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                       );
                     })
-                    .whereType<Marker>()
                     .toList(),
               ),
             ],
@@ -341,6 +245,23 @@ class _HomeScreenState extends State<HomeScreen>
                   } else {
                     _getUserLocation();
                   }
+                },
+              ),
+            ),
+          ),
+          Positioned(
+            top: 80,
+            right: 20,
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceWhite,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: AppTheme.softShadow,
+              ),
+              child: IconButton(
+                icon: Icon(Icons.refresh, color: AppTheme.textMain),
+                onPressed: () {
+                  ref.invalidate(pairedCarsProvider);
                 },
               ),
             ),
@@ -387,20 +308,15 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildCarDetailsSheet(Map<String, dynamic> car) {
+  Widget _buildCarDetailsSheet(Car car) {
     String distanceStr = "Unknown dist";
-    if (car['calculatedDistance'] != null) {
-      double d = car['calculatedDistance'];
+    if (car.calculatedDistance != null) {
+      double d = car.calculatedDistance!;
       if (d > 1000) {
         distanceStr = "${(d / 1000).toStringAsFixed(1)} km away";
       } else {
         distanceStr = "${d.toInt()} m away";
       }
-    }
-
-    List<String> allowedCities = [];
-    if (car['allowedCities'] != null && car['allowedCities'] is List) {
-      allowedCities = List<String>.from(car['allowedCities']);
     }
 
     return Container(
@@ -441,9 +357,9 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(AppTheme.radiusXl),
-                          child: (car['photo'] != null && car['photo'].isNotEmpty)
+                          child: (car.photo != null && car.photo!.isNotEmpty)
                             ? Image.network(
-                                car['photo'],
+                                car.photo!,
                                 fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => Icon(Icons.directions_car, size: 80, color: AppTheme.textMuted),
                               )
@@ -454,11 +370,11 @@ class _HomeScreenState extends State<HomeScreen>
                     SizedBox(height: 24),
                     
                     Text(
-                      car['marque'] ?? 'Unknown Car',
+                      car.marque,
                       style: Theme.of(context).textTheme.displayLarge,
                     ),
                     Text(
-                      car['matricule'] ?? 'N/A',
+                      car.matricule,
                       style: TextStyle(fontSize: 16, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
                     ),
                     SizedBox(height: 16),
@@ -484,15 +400,24 @@ class _HomeScreenState extends State<HomeScreen>
                         Container(
                           padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
-                            color: AppTheme.success.withOpacity(0.1),
+                            color: car.healthStatus == "OK" ? AppTheme.success.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          child: Text("Available", style: TextStyle(fontSize: 14, color: AppTheme.success, fontWeight: FontWeight.w600)),
+                          child: Text(car.healthStatus, style: TextStyle(fontSize: 14, color: car.healthStatus == "OK" ? AppTheme.success : Colors.orange, fontWeight: FontWeight.w600)),
+                        ),
+                        SizedBox(width: 12),
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceGray,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(car.energyType, style: TextStyle(fontSize: 14, color: AppTheme.textMain, fontWeight: FontWeight.w600)),
                         ),
                       ],
                     ),
                     
-                    if (car['cityRestriction'] == true) ...[
+                    if (car.cityRestriction) ...[
                       SizedBox(height: 16),
                       Container(
                         padding: EdgeInsets.all(12),
@@ -507,7 +432,7 @@ class _HomeScreenState extends State<HomeScreen>
                             SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                "City Restrictions: ${allowedCities.isEmpty ? 'Regional only' : allowedCities.join(', ')}",
+                                "City Restrictions: ${car.allowedCities.isEmpty ? 'Regional only' : car.allowedCities.join(', ')}",
                                 style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w500, fontSize: 13),
                               ),
                             )
@@ -516,31 +441,27 @@ class _HomeScreenState extends State<HomeScreen>
                       )
                     ],
 
-                    if (car['description'] != null && car['description'].isNotEmpty) ...[
+                    if (car.description != null && car.description!.isNotEmpty) ...[
                       SizedBox(height: 24),
                       Text("Description", style: Theme.of(context).textTheme.bodyLarge),
                       SizedBox(height: 8),
-                      Text(car['description'], style: TextStyle(color: AppTheme.textMuted, height: 1.5)),
+                      Text(car.description!, style: TextStyle(color: AppTheme.textMuted, height: 1.5)),
                     ],
 
                     SizedBox(height: 32),
                     ElevatedButton(
-                      onPressed: () async {
-                        SharedPreferences prefs = await SharedPreferences.getInstance();
-                        await prefs.setString("selectedCarId", car['_id']);
+                      onPressed: () {
                         if (!mounted) return;
                         
-                        String pickupLocation = '';
-                        if (car['location'] is String) pickupLocation = car['location'];
-                        else if (car['location'] is Map) {
-                          pickupLocation = "${car['location']['latitude']},${car['location']['longitude']}";
-                        }
+                        String pickupLocation = car.lastKnownLocation != null
+                            ? "${car.lastKnownLocation!.latitude},${car.lastKnownLocation!.longitude}"
+                            : '';
                         
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) => EstimationScreen(
-                              carId: car['_id'],
+                              carId: car.id,
                               pickupLocation: pickupLocation,
                             ),
                           ),
@@ -566,46 +487,10 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildDetailItem(IconData icon, String label, String value) {
-    return Row(
-      children: [
-        Container(
-          padding: EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: AppTheme.brandLight,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, color: AppTheme.brandBlue),
-        ),
-        SizedBox(width: 16),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                color: AppTheme.textMuted,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textMain,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
 
-  Future<void> _logout() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.remove("userId");
+
+  void _logout() async {
+    await ref.read(authProvider.notifier).logout();
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (context) => LoginScreen()),
@@ -615,6 +500,35 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Watch auth state for user info (drawer)
+    final authState = ref.watch(authProvider);
+    final userName = authState.user?.fullName ?? "User";
+    final userEmail = authState.user?.email ?? "email@example.com";
+
+    // Watch paired cars
+    final carsAsync = ref.watch(pairedCarsProvider);
+
+    // Watch unread notification badge
+    final badgeCount = ref.watch(unreadBadgeCountProvider);
+
+    // Convert Car models back to Map for existing marker/sheet code
+    final availableCars = carsAsync.when(
+      data: (cars) {
+        final filtered = cars.where((c) => c.isPaired && c.isAvailable).toList();
+        for (var c in filtered) {
+          if (_userLocation != null && c.lastKnownLocation != null) {
+            final distance = const Distance();
+            c.calculatedDistance = distance.as(
+              LengthUnit.Meter, _userLocation!, c.lastKnownLocation!,
+            ).toDouble();
+          }
+        }
+        return filtered;
+      },
+      loading: () => <Car>[],
+      error: (_, __) => <Car>[],
+    );
+
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: AppTheme.surfaceGray,
@@ -654,22 +568,68 @@ class _HomeScreenState extends State<HomeScreen>
               color: AppTheme.surfaceGray,
               shape: BoxShape.circle,
             ),
-            child: IconButton(
-              icon: Icon(Icons.notifications_none, color: AppTheme.textMain),
-              onPressed: () {
-                // Show notifications
-              },
+            child: Stack(
+              children: [
+                IconButton(
+                  icon: Icon(Icons.notifications_none, color: AppTheme.textMain),
+                  onPressed: () {
+                    // Show notifications
+                  },
+                ),
+                if (badgeCount > 0)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: Container(
+                      padding: EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.danger,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: BoxConstraints(minWidth: 18, minHeight: 18),
+                      child: Text(
+                        badgeCount > 9 ? '9+' : '$badgeCount',
+                        style: TextStyle(
+                          color: AppTheme.surfaceWhite,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
       ),
-      drawer: _buildDrawer(context),
+      drawer: _buildDrawer(context, userName, userEmail),
       body: SafeArea(
         child: Column(
           children: [
             buildStepIndicator(),
             Expanded(
-              child: _buildMapWithMarkers(),
+              child: carsAsync.when(
+                data: (_) => _buildMapWithMarkers(availableCars.cast<Car>()),
+                loading: () => Center(
+                  child: CircularProgressIndicator(color: AppTheme.brandBlue),
+                ),
+                error: (e, _) => Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.error_outline, color: AppTheme.danger, size: 48),
+                      SizedBox(height: 16),
+                      Text('Failed to load cars', style: TextStyle(color: AppTheme.textMuted)),
+                      SizedBox(height: 8),
+                      TextButton(
+                        onPressed: () => ref.invalidate(pairedCarsProvider),
+                        child: Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -677,7 +637,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildDrawer(BuildContext context) {
+  Widget _buildDrawer(BuildContext context, String userName, String userEmail) {
     return Drawer(
       child: Container(
         color: AppTheme.surfaceWhite,

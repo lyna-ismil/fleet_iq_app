@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import '../../constants/api_config.dart';
 import '../../constants/theme.dart';
-import '../../services/api_service.dart';
+import '../../providers/auth_provider.dart';
 import './widgets/custom_text_field.dart';
 import './widgets/password_strength_indicator.dart';
 import './widgets/social_login_button.dart';
@@ -11,53 +11,43 @@ import 'home_screen.dart';
 import 'signup_screen.dart';
 import 'forgot_password_screen.dart';
 
-class LoginScreen extends StatefulWidget {
+class LoginScreen extends ConsumerStatefulWidget {
   @override
-  _LoginScreenState createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  String? _errorMessage;
-  bool _isLoading = false;
   bool _isPasswordVisible = false;
 
   void _loginWithEmailAndPassword() async {
     if (_formKey.currentState!.validate()) {
-      setState(() {
-        _isLoading = true;
-        _errorMessage = null;
-      });
+      await ref.read(authProvider.notifier).login(
+            _emailController.text.trim(),
+            _passwordController.text.trim(),
+          );
 
-      try {
-        await ApiService.loginUser(
-          _emailController.text.trim(),
-          _passwordController.text.trim(),
-        );
+      final authState = ref.read(authProvider);
 
+      if (authState.isAuthenticated) {
         Navigator.pushReplacement(
             context, MaterialPageRoute(builder: (context) => HomeScreen()));
 
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text("Login Successful!")));
-      } catch (e) {
-        setState(() {
-          _errorMessage = e.toString().contains("Exception: Login Failed")
-              ? "Invalid email or password."
-              : "Server connection failed. Check your network.";
-        });
       }
-
-      setState(() {
-        _isLoading = false;
-      });
+      // Error message is shown reactively via ref.watch in the build tree
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authProvider);
+    final isLoading = authState.status == AuthStatus.loading;
+    final errorMessage = authState.errorMessage;
+
     return Scaffold(
       backgroundColor: AppTheme.surfaceWhite,
       body: SafeArea(
@@ -70,7 +60,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 SizedBox(height: 60),
                 _buildHeader(),
                 SizedBox(height: 40),
-                _buildLoginForm(),
+                _buildLoginForm(isLoading, errorMessage),
                 SizedBox(height: 32),
                 _buildSignUpLink(),
                 SizedBox(height: 40),
@@ -99,7 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildLoginForm() {
+  Widget _buildLoginForm(bool isLoading, String? errorMessage) {
     return Form(
       key: _formKey,
       child: Column(
@@ -174,7 +164,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
           SizedBox(height: 32),
-          if (_errorMessage != null)
+          if (errorMessage != null)
             Padding(
               padding: EdgeInsets.only(bottom: 20),
               child: Container(
@@ -189,7 +179,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        _errorMessage!,
+                        errorMessage,
                         style: TextStyle(color: Colors.redAccent),
                       ),
                     ),
@@ -197,7 +187,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
             ),
-          _buildLoginButton(),
+          _buildLoginButton(isLoading),
           SizedBox(height: 40),
           _buildSocialLoginButtons(),
         ],
@@ -205,10 +195,10 @@ class _LoginScreenState extends State<LoginScreen> {
     ).animate().fadeIn(duration: 600.ms, delay: 400.ms).slideY(begin: 0.1, end: 0);
   }
 
-  Widget _buildLoginButton() {
+  Widget _buildLoginButton(bool isLoading) {
     return ElevatedButton(
-      onPressed: _isLoading ? null : _loginWithEmailAndPassword,
-      child: _isLoading
+      onPressed: isLoading ? null : _loginWithEmailAndPassword,
+      child: isLoading
           ? SizedBox(
               width: 20,
               height: 20,
@@ -289,4 +279,3 @@ class _LoginScreenState extends State<LoginScreen> {
     ).animate().fadeIn(duration: 600.ms, delay: 600.ms);
   }
 }
-

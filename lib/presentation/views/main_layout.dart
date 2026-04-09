@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants/theme.dart';
+import '../../providers/notification_provider.dart';
 import 'home_screen.dart';
 import 'profile_screen.dart';
 import 'booking_dashboard_screen.dart';
 
-class MainLayout extends StatefulWidget {
+class MainLayout extends ConsumerStatefulWidget {
   @override
-  _MainLayoutState createState() => _MainLayoutState();
+  ConsumerState<MainLayout> createState() => _MainLayoutState();
 }
 
-class _MainLayoutState extends State<MainLayout> {
+class _MainLayoutState extends ConsumerState<MainLayout> {
   int _currentIndex = 0;
 
   final List<Widget> _screens = [
@@ -21,6 +23,8 @@ class _MainLayoutState extends State<MainLayout> {
 
   @override
   Widget build(BuildContext context) {
+    final badgeCount = ref.watch(unreadBadgeCountProvider);
+
     return Scaffold(
       body: Stack(
         children: [
@@ -63,6 +67,7 @@ class _MainLayoutState extends State<MainLayout> {
                     activeIcon: Icons.history,
                     inactiveIcon: Icons.history,
                     label: "Bookings",
+                    badgeCount: badgeCount,
                   ),
                   _buildNavItem(
                     index: 3,
@@ -84,6 +89,7 @@ class _MainLayoutState extends State<MainLayout> {
     required IconData activeIcon,
     required IconData inactiveIcon,
     required String label,
+    int badgeCount = 0,
   }) {
     bool isActive = _currentIndex == index;
 
@@ -101,15 +107,42 @@ class _MainLayoutState extends State<MainLayout> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AnimatedScale(
-              scale: isActive ? 1.2 : 1.0,
-              duration: Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-              child: Icon(
-                isActive ? activeIcon : inactiveIcon,
-                color: isActive ? AppTheme.brandBlue : AppTheme.textMuted,
-                size: 26,
-              ),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                AnimatedScale(
+                  scale: isActive ? 1.2 : 1.0,
+                  duration: Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  child: Icon(
+                    isActive ? activeIcon : inactiveIcon,
+                    color: isActive ? AppTheme.brandBlue : AppTheme.textMuted,
+                    size: 26,
+                  ),
+                ),
+                if (badgeCount > 0)
+                  Positioned(
+                    right: -6,
+                    top: -4,
+                    child: Container(
+                      padding: EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        color: AppTheme.danger,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: BoxConstraints(minWidth: 16, minHeight: 16),
+                      child: Text(
+                        badgeCount > 9 ? '9+' : '$badgeCount',
+                        style: TextStyle(
+                          color: AppTheme.surfaceWhite,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
             ),
             SizedBox(height: 4),
             Text(

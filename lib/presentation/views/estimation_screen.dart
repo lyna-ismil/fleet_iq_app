@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../constants/theme.dart';
-import './widgets/custom_text_field.dart';
+import '../../services/api_service.dart';
+import '../../providers/auth_provider.dart';
 import 'confirmation_screen.dart';
 
-class EstimationScreen extends StatefulWidget {
+class EstimationScreen extends ConsumerStatefulWidget {
   final String carId;
   final String pickupLocation;
 
@@ -18,17 +18,34 @@ class EstimationScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  _EstimationScreenState createState() => _EstimationScreenState();
+  ConsumerState<EstimationScreen> createState() => _EstimationScreenState();
 }
 
-class _EstimationScreenState extends State<EstimationScreen>
+class _EstimationScreenState extends ConsumerState<EstimationScreen>
     with SingleTickerProviderStateMixin {
   DateTime? startDate;
   DateTime? endDate;
   double? estimatedCost;
+  PriceEstimate? _priceEstimate;
   bool isLoading = false;
   String dropOffLocation = "";
   late String pickupLocation;
+  
+  bool _superCdwSelected = false;
+  bool _additionalDriverSelected = false;
+  List<String> _availableLocations = [];
+  String? _selectedLocation;
+
+  static const Map<String, String> _locationKeyMap = {
+    "Tunis Aouina": "downtown",
+    "Aéroport Tunis": "airport",
+    "Ariana": "ariana",
+    "Sfax": "sfax",
+    "Monastir": "monastir",
+  };
+
+  String _mapLocationToKey(String label) =>
+      _locationKeyMap[label] ?? "downtown";
 
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -38,6 +55,24 @@ class _EstimationScreenState extends State<EstimationScreen>
   void initState() {
     super.initState();
     pickupLocation = widget.pickupLocation;
+
+    ApiService.getPricingLocations().then((locs) {
+      if (mounted) {
+        setState(() {
+          _availableLocations = locs;
+          if (_availableLocations.isNotEmpty) {
+            // Optional: preselect or leave null
+          }
+        });
+      }
+    }).catchError((e) {
+      // Fallback locations if backend fails
+      if (mounted) {
+        setState(() {
+          _availableLocations = _locationKeyMap.keys.toList();
+        });
+      }
+    });
 
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 600),
@@ -118,6 +153,7 @@ class _EstimationScreenState extends State<EstimationScreen>
             endDate = fullDateTime;
           }
           estimatedCost = null; // reset estimate if dates change
+          _priceEstimate = null;
         });
       }
     }
@@ -135,52 +171,42 @@ class _EstimationScreenState extends State<EstimationScreen>
       return;
     }
 
-    final totalDurationHours = diff.inMinutes / 60;
-    final durationDays = diff.inDays == 0 ? 1 : diff.inDays;
-    final bookingHour = startDate!.hour.toDouble();
-    final bookingDayOfWeek = startDate!.weekday % 7;
-    final bookingMonth = startDate!.month;
-    final isWeekend = bookingDayOfWeek == 6 || bookingDayOfWeek == 0;
-    final isPeakHour = bookingHour >= 8 && bookingHour <= 10 ||
-        bookingHour >= 17 && bookingHour <= 19;
-
-    final bookingCount = 2; // Placeholder
-    final driveBehaviorScore = 4.5; // Placeholder
-
-    final url = Uri.parse("http://85.214.12.71:8000/predict");
-    final headers = {"Content-Type": "application/json"};
-    final body = jsonEncode({
-      "booking_hour": bookingHour,
-      "booking_day_of_week": bookingDayOfWeek,
-      "booking_month": bookingMonth,
-      "is_peak_hour": isPeakHour ? 1 : 0,
-      "is_weekend": isWeekend ? 1 : 0,
-      "total_duration_hours": totalDurationHours,
-      "duration_days": durationDays,
-      "booking_count": bookingCount,
-      "drive_behavior_score": driveBehaviorScore,
-    });
+    if (_selectedLocation == null) {
+      _showErrorSnackBar('Please select a drop-off location');
+      return;
+    }
 
     setState(() => isLoading = true);
     try {
-      final response = await http.post(url, headers: headers, body: body);
-      if (response.statusCode == 200) {
-        final result = jsonDecode(response.body);
-        setState(() {
-          estimatedCost = result['estimated_cost'];
-          if (estimatedCost != null) {
-            _animationController.reset();
-            _animationController.forward();
-          }
-        });
-      } else {
-        _showErrorSnackBar('Failed to estimate cost');
-      }
+      final car = await ApiService.getCarById(widget.carId);
+      final user = ref.read(authProvider).user!;
+      final userAge = user.age;
+      // final bookingCount = user.nbrFoisAllocation;
+
+      final req = EstimateRequest(
+        vehicleName: car.marque,
+        pickupDate: startDate!,
+        dropoffDate: endDate!,
+        location: _mapLocationToKey(_selectedLocation!),
+        driverAgeGroup: userAge < 26 ? "young" : "adult",
+        superCdw: _superCdwSelected,
+        additionalDriver: _additionalDriverSelected,
+      );
+
+      final result = await ApiService.estimatePrice(req);
+      
+      setState(() {
+        _priceEstimate = result;
+        estimatedCost = result.total;
+        dropOffLocation = _selectedLocation!;
+        _animationController.reset();
+        _animationController.forward();
+      });
     } catch (e) {
       print('Error: $e');
-      _showErrorSnackBar('An error occurred. Is the API running?');
+      _showErrorSnackBar('Failed to estimate price from server.');
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -253,8 +279,35 @@ class _EstimationScreenState extends State<EstimationScreen>
   double _calculateProgress() {
     if (startDate == null && endDate == null) return 0.0;
     if (startDate != null && endDate == null) return 0.33;
-    if (startDate != null && endDate != null && dropOffLocation.isEmpty) return 0.66;
+    if (startDate != null && endDate != null && _selectedLocation == null) return 0.66;
     return 1.0;
+  }
+
+  Widget _buildBreakdownRow(String label, double amount, {bool isTotal = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: AppTheme.surfaceWhite.withOpacity(isTotal ? 1.0 : 0.8),
+              fontSize: isTotal ? 18 : 14,
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          Text(
+            "${amount > 0 && !isTotal ? '+' : ''}${amount.toStringAsFixed(2)} DT",
+            style: TextStyle(
+              color: AppTheme.surfaceWhite,
+              fontSize: isTotal ? 22 : 14,
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -324,7 +377,7 @@ class _EstimationScreenState extends State<EstimationScreen>
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          "Booking Completion",
+                          "Booking Completion", // FIXED: using "Booking Completion" literally
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                         Text(
@@ -416,31 +469,84 @@ class _EstimationScreenState extends State<EstimationScreen>
                 ),
                 SizedBox(height: 16),
                 Container(
-                  padding: EdgeInsets.all(20),
+                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   decoration: BoxDecoration(
                     color: AppTheme.surfaceWhite,
                     borderRadius: BorderRadius.circular(AppTheme.radiusXl),
                     boxShadow: AppTheme.softShadow,
                   ),
-                  child: TextField(
-                    decoration: InputDecoration(
-                      hintText: "Enter the precise drop-off location...",
-                      filled: true,
-                      fillColor: AppTheme.surfaceGray,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(AppTheme.radiusXl),
-                        borderSide: BorderSide.none,
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(AppTheme.radiusXl),
-                        borderSide: BorderSide(color: AppTheme.brandBlue, width: 1.5),
-                      ),
-                    ),
+                  child: DropdownButtonFormField<String>(
+                    value: _selectedLocation,
+                    hint: Text("Select drop-off location..."),
+                    decoration: InputDecoration(border: InputBorder.none),
+                    isExpanded: true,
+                    items: _availableLocations.map((loc) {
+                      return DropdownMenuItem<String>(
+                        value: loc,
+                        child: Text(loc),
+                      );
+                    }).toList(),
                     onChanged: (value) {
                       setState(() {
-                         dropOffLocation = value;
+                         _selectedLocation = value;
+                         dropOffLocation = value ?? "";
+                         estimatedCost = null;
+                         _priceEstimate = null;
                       });
                     },
+                  ),
+                ),
+                
+                SizedBox(height: 24),
+                // Options
+                Row(
+                  children: [
+                    Icon(Icons.tune_outlined, size: 20, color: AppTheme.textMuted),
+                    SizedBox(width: 8),
+                    Text(
+                      "Options",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textMain,
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 16),
+                Container(
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceWhite,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+                    boxShadow: AppTheme.softShadow,
+                  ),
+                  child: Column(
+                    children: [
+                      SwitchListTile(
+                        title: Text("Super CDW Insurance"),
+                        subtitle: Text("Full coverage with no deductible"),
+                        value: _superCdwSelected,
+                        activeColor: AppTheme.brandBlue,
+                        onChanged: (val) => setState(() {
+                          _superCdwSelected = val;
+                          estimatedCost = null;
+                          _priceEstimate = null;
+                        }),
+                      ),
+                      Divider(height: 1),
+                      SwitchListTile(
+                        title: Text("Additional Driver"),
+                        subtitle: Text("Add a second driver for this trip"),
+                        value: _additionalDriverSelected,
+                        activeColor: AppTheme.brandBlue,
+                        onChanged: (val) => setState(() {
+                          _additionalDriverSelected = val;
+                          estimatedCost = null;
+                          _priceEstimate = null;
+                        }),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -475,7 +581,7 @@ class _EstimationScreenState extends State<EstimationScreen>
               SizedBox(height: 32),
 
               // Results Section
-              if (estimatedCost != null)
+              if (_priceEstimate != null)
                 FadeTransition(
                   opacity: _fadeAnimation,
                   child: SlideTransition(
@@ -513,35 +619,36 @@ class _EstimationScreenState extends State<EstimationScreen>
                           SizedBox(height: 8),
                           Text(
                             "for ${_formatDuration()}",
+                            textAlign: TextAlign.center,
                             style: TextStyle(
                               color: AppTheme.surfaceWhite.withOpacity(0.7),
                             ),
                           ),
                           SizedBox(height: 24),
                           Container(
-                            padding: EdgeInsets.symmetric(vertical: 24, horizontal: 32),
+                            padding: EdgeInsets.symmetric(vertical: 24, horizontal: 24),
                             decoration: BoxDecoration(
                               color: AppTheme.surfaceWhite.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(AppTheme.radiusXl),
                             ),
                             child: Column(
                               children: [
-                                Text(
-                                  "Estimated Cost",
-                                  style: TextStyle(
-                                    color: AppTheme.surfaceWhite.withOpacity(0.8),
-                                    fontSize: 14,
-                                  ),
+                                _buildBreakdownRow("Base Rental", _priceEstimate!.basePrice),
+                                if (_priceEstimate!.seasonAdjustment != 0)
+                                  _buildBreakdownRow("Season Adj.", _priceEstimate!.seasonAdjustment),
+                                if (_priceEstimate!.superCdw > 0)
+                                  _buildBreakdownRow("Super CDW", _priceEstimate!.superCdw),
+                                if (_priceEstimate!.additionalDriver > 0)
+                                  _buildBreakdownRow("Add. Driver", _priceEstimate!.additionalDriver),
+                                if (_priceEstimate!.youngDriverSurcharge > 0)
+                                  _buildBreakdownRow("Young Driver", _priceEstimate!.youngDriverSurcharge),
+                                _buildBreakdownRow("Admin Fee", _priceEstimate!.adminFee),
+                                _buildBreakdownRow("VAT (19%)", _priceEstimate!.vat),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                  child: Divider(color: Colors.white54),
                                 ),
-                                SizedBox(height: 8),
-                                Text(
-                                  "${estimatedCost!.toStringAsFixed(2)} DT",
-                                  style: TextStyle(
-                                    fontSize: 36,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTheme.surfaceWhite,
-                                  ),
-                                ),
+                                _buildBreakdownRow("Total", _priceEstimate!.total, isTotal: true),
                               ],
                             ),
                           ),

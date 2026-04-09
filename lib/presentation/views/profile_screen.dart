@@ -1,21 +1,22 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'login_screen.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 
 import '../../constants/api_config.dart';
 import '../../constants/theme.dart';
+import '../../providers/auth_provider.dart';
 import './widgets/custom_text_field.dart';
 
-class ProfileScreen extends StatefulWidget {
+class ProfileScreen extends ConsumerStatefulWidget {
   @override
-  _ProfileScreenState createState() => _ProfileScreenState();
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
 
   File? _profileImage;
@@ -34,22 +35,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadUserProfile() async {
+    final authState = ref.read(authProvider);
+    final userId = authState.userId;
+
+    if (userId == null) {
+      setState(() {
+        _errorMessage = "Session expired. Please log in again.";
+      });
+      return;
+    }
+
+    // If we already have user data from the provider, populate fields
+    if (authState.user != null) {
+      setState(() {
+        _fullNameController.text = authState.user!.fullName;
+        _emailController.text = authState.user!.email;
+        _phoneController.text = authState.user!.phone ?? "";
+        _isVerified = authState.user!.isVerified;
+      });
+      return;
+    }
+
+    // Otherwise fetch fresh
     try {
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      String? userId = prefs.getString("userId");
-
-      if (userId == null) {
-        setState(() {
-          _errorMessage = "Session expired. Please log in again.";
-        });
-        return;
-      }
-
-      final response = await http.get(Uri.parse("$userEndpoint/users/$userId"));
+      final response = await http.get(Uri.parse("$userEndpoint/$userId"));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final user = data["user"];
+        final user = data["user"] ?? data;
 
         setState(() {
           _fullNameController.text = user["fullName"] ?? "";
@@ -85,19 +98,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _errorMessage = null;
       });
 
+      final userId = ref.read(authProvider).userId;
+
+      if (userId == null) {
+        setState(() {
+          _errorMessage = "Session expired. Please log in again.";
+          _isLoading = false;
+        });
+        return;
+      }
+
       try {
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        String? userId = prefs.getString("userId");
-
-        if (userId == null) {
-          setState(() {
-            _errorMessage = "Session expired. Please log in again.";
-            _isLoading = false;
-          });
-          return;
-        }
-
-        const String baseUrl = "$userEndpoint/users";
+        const String baseUrl = "$userEndpoint";
         var uri = Uri.parse("$baseUrl/$userId");
 
         var request = http.MultipartRequest('PUT', uri);
@@ -124,6 +136,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _isLoading = false;
           });
 
+          // Refresh user profile in the auth provider
+          await ref.read(authProvider.notifier).refreshUserProfile();
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("Profile Updated Successfully! ✅")),
           );
@@ -144,8 +159,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _logout() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.remove("userId");
+    await ref.read(authProvider.notifier).logout();
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (context) => LoginScreen()),
@@ -175,6 +189,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   key: _formKey,
                   child: Column(
                     children: [
+                      if (_errorMessage != null)
+                        Padding(
+                          padding: EdgeInsets.only(bottom: 16),
+                          child: Container(
+                            padding: EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppTheme.danger.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.error_outline, color: AppTheme.danger, size: 20),
+                                SizedBox(width: 8),
+                                Expanded(child: Text(_errorMessage!, style: TextStyle(color: AppTheme.danger, fontSize: 13))),
+                              ],
+                            ),
+                          ),
+                        ),
                       SizedBox(height: 16),
                       _buildProfilePicture(),
                       SizedBox(height: 24),

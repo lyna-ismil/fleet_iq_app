@@ -1,21 +1,22 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'home_screen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 
 import '../../constants/api_config.dart';
 import '../../constants/theme.dart';
+import '../../providers/auth_provider.dart';
 import './widgets/custom_text_field.dart';
 
-class ReclamationScreen extends StatefulWidget {
+class ReclamationScreen extends ConsumerStatefulWidget {
   @override
-  _ReclamationScreenState createState() => _ReclamationScreenState();
+  ConsumerState<ReclamationScreen> createState() => _ReclamationScreenState();
 }
 
-class _ReclamationScreenState extends State<ReclamationScreen>
+class _ReclamationScreenState extends ConsumerState<ReclamationScreen>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _titleController = TextEditingController();
@@ -85,8 +86,7 @@ class _ReclamationScreenState extends State<ReclamationScreen>
       });
 
       try {
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        String? userId = prefs.getString("userId");
+        final userId = ref.read(authProvider).userId;
 
         if (userId == null || userId.isEmpty) {
           setState(() {
@@ -318,7 +318,7 @@ class _ReclamationScreenState extends State<ReclamationScreen>
                         ),
                         SizedBox(height: 20),
 
-                        // Description field (we'll implement custom multi-line text field logic)
+                        // Description field
                         TextFormField(
                           controller: _descriptionController,
                           maxLines: 5,
