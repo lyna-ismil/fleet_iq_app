@@ -5,6 +5,7 @@ import '../../providers/notification_provider.dart';
 import 'home_screen.dart';
 import 'profile_screen.dart';
 import 'booking_dashboard_screen.dart';
+import 'notifications_screen.dart';
 
 class MainLayout extends ConsumerStatefulWidget {
   @override
@@ -32,6 +33,53 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
           IndexedStack(
             index: _currentIndex,
             children: _screens,
+          ),
+
+          // Floating top-right bell icon
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            right: 16,
+            child: GestureDetector(
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationsScreen()));
+              },
+              child: Container(
+                padding: EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceWhite,
+                  shape: BoxShape.circle,
+                  boxShadow: AppTheme.softShadow,
+                ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(Icons.notifications_outlined, color: AppTheme.textMain, size: 24),
+                    if (badgeCount > 0)
+                      Positioned(
+                        right: -4,
+                        top: -4,
+                        child: Container(
+                          padding: EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            color: AppTheme.danger,
+                            shape: BoxShape.circle,
+                          ),
+                          constraints: BoxConstraints(minWidth: 16, minHeight: 16),
+                          child: Text(
+                            badgeCount > 9 ? '9+' : '$badgeCount',
+                            style: TextStyle(
+                              color: AppTheme.surfaceWhite,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
           ),
 
           // Floating bottom navigation bar
@@ -67,7 +115,6 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
                     activeIcon: Icons.history,
                     inactiveIcon: Icons.history,
                     label: "Bookings",
-                    badgeCount: badgeCount,
                   ),
                   _buildNavItem(
                     index: 3,

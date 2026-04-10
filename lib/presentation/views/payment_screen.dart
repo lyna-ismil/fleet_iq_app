@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'NFCKeyScreen.dart';
 
 import '../../constants/theme.dart';
+import '../../constants/api_config.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/booking_provider.dart';
 import '../../services/api_service.dart';
 import './widgets/custom_text_field.dart';
 
@@ -32,7 +35,7 @@ class PaymentScreen extends ConsumerStatefulWidget {
 
 class _PaymentScreenState extends ConsumerState<PaymentScreen>
     with SingleTickerProviderStateMixin {
-  String selectedMethod = "Credit Card";
+  String selectedMethod = "Flouci";
   final _formKey = GlobalKey<FormState>();
   bool isProcessing = false;
 
@@ -78,63 +81,92 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
     super.dispose();
   }
 
-  Future<dynamic> _storeBooking() async {
-    final userId = ref.read(authProvider).userId;
+  Future<void> _processPayment() async {
+    if (selectedMethod == "Credit Card" && !_formKey.currentState!.validate()) return;
+    setState(() => isProcessing = true);
 
-    if (userId == null) return null;
+    try {
+      // Step 1: Create the booking first
+      final userId = ref.read(authProvider).userId;
+      if (userId == null) throw Exception("Session expired. Please log in again.");
 
-    final bookingResponse = await ApiService.createBooking(
-        userId: userId,
+      final booking = await ref.read(bookingProvider.notifier).createBooking(
         carId: widget.carId,
         startDate: widget.startDate,
         endDate: widget.endDate,
-        locationBeforeRenting: widget.pickupLocation,
-        locationAfterRenting: widget.dropOffLocation,
-        estimatedLocation: widget.dropOffLocation,
-    );
+        pickupLocation: widget.pickupLocation,
+        dropoffLocation: widget.dropOffLocation,
+      );
 
-    return bookingResponse;
-  }
+      if (booking == null) throw Exception("Failed to create booking.");
+      final bookingId = booking['_id'] ?? booking['id'] ?? '';
 
-  void _simulatePayment() async {
-    if (selectedMethod == "Credit Card" && !_formKey.currentState!.validate()) return;
-    setState(() => isProcessing = true);
-    await Future.delayed(Duration(seconds: 2));
+      if (selectedMethod == "Flouci") {
+        // Step 2: Initiate Flouci payment
+        // Flouci integration: Open payment page in browser
+        // In production, use the flouci package or redirect URL approach
+        final paymentUrl = '$baseApiUrl/payments/flouci/initiate?bookingId=$bookingId&amount=${widget.totalAmount.toStringAsFixed(0)}';
+        
+        final uri = Uri.parse(paymentUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+        
+        // For now, confirm the payment and navigate
+        // In production, this would be handled by deep link callback
+        await ApiService.confirmBookingPayment(bookingId, 'flouci_pending');
+      } else {
+        // Credit card: confirm payment directly
+        await ApiService.confirmBookingPayment(bookingId, 'card_${cardNumberController.text.substring(cardNumberController.text.length - 4)}');
+      }
 
-    try {
-      final booking = await _storeBooking();
-      if (booking == null) throw Exception("Failed to store booking.");
+      // Step 3: Generate NFC key
+      final nfcKey = await ref.read(bookingProvider.notifier).generateNfcKey(bookingId);
+
       setState(() => isProcessing = false);
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => NFCKeyScreen(
-            carId: widget.carId,
-            startDate: widget.startDate,
-            endDate: widget.endDate,
-            pickupLocation: widget.pickupLocation,
-            dropOffLocation: widget.dropOffLocation,
-            estimatedPrice: widget.totalAmount,
-            bookingId: booking['_id'],
+      if (nfcKey != null) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => NFCKeyScreen(
+              carId: widget.carId,
+              startDate: widget.startDate,
+              endDate: widget.endDate,
+              pickupLocation: widget.pickupLocation,
+              dropOffLocation: widget.dropOffLocation,
+              estimatedPrice: widget.totalAmount,
+              bookingId: bookingId,
+              nfcKey: nfcKey,
+            ),
           ),
-        ),
-      );
+        );
+      } else {
+        _showSnackBar("Payment successful! NFC key will be available shortly.", isError: false);
+        Navigator.pop(context);
+      }
     } catch (e) {
       setState(() => isProcessing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.error_outline, color: AppTheme.surfaceWhite),
-              SizedBox(width: 8),
-              Expanded(child: Text(e.toString())),
-            ],
-          ),
-          backgroundColor: AppTheme.danger,
-        ),
-      );
+      _showSnackBar(e.toString(), isError: true);
     }
+  }
+
+  void _showSnackBar(String message, {bool isError = true}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              isError ? Icons.error_outline : Icons.check_circle_outline,
+              color: AppTheme.surfaceWhite,
+            ),
+            SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: isError ? AppTheme.danger : AppTheme.success,
+      ),
+    );
   }
 
   String _formatCardNumber(String input) {
@@ -204,22 +236,71 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
                     children: [
                       Expanded(
                         child: _buildMethodCard(
-                          "Credit Card",
-                          Icons.credit_card,
+                          "Flouci",
+                          Icons.account_balance,
                         ),
                       ),
                       SizedBox(width: 16),
                       Expanded(
                         child: _buildMethodCard(
-                          "PayPal",
-                          Icons.account_balance_wallet_outlined,
+                          "Credit Card",
+                          Icons.credit_card,
                         ),
                       ),
                     ],
                   ),
                   SizedBox(height: 32),
 
-                  if (selectedMethod == "Credit Card") ...[
+                  if (selectedMethod == "Flouci") ...[
+                    Container(
+                      padding: EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceWhite,
+                        borderRadius: BorderRadius.circular(AppTheme.radius2xl),
+                        boxShadow: AppTheme.softShadow,
+                      ),
+                      child: Column(
+                        children: [
+                          Container(
+                            padding: EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Color(0xFFF0E6FF),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(Icons.account_balance, color: Color(0xFF7C3AED), size: 40),
+                          ),
+                          SizedBox(height: 16),
+                          Text(
+                            "Flouci Payment",
+                            style: Theme.of(context).textTheme.bodyLarge,
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            "Tunisia's secure payment gateway.\nYou'll be redirected to complete the payment.",
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          SizedBox(height: 16),
+                          Container(
+                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: AppTheme.success.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.verified_user, color: AppTheme.success, size: 16),
+                                SizedBox(width: 4),
+                                Text("SSL Secured", style: TextStyle(color: AppTheme.success, fontSize: 12, fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    // Credit card visual
                     Container(
                       height: 200,
                       decoration: BoxDecoration(
@@ -372,38 +453,6 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
                         ],
                       ),
                     ),
-                  ] else ...[
-                    Container(
-                      padding: EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        color: AppTheme.surfaceWhite,
-                        borderRadius: BorderRadius.circular(AppTheme.radius2xl),
-                        boxShadow: AppTheme.softShadow,
-                      ),
-                      child: Column(
-                        children: [
-                          Container(
-                            padding: EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: AppTheme.brandLight,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(Icons.account_balance_wallet_outlined, color: AppTheme.brandBlue, size: 40),
-                          ),
-                          SizedBox(height: 16),
-                          Text(
-                            "Secure PayPal Checkout",
-                            style: Theme.of(context).textTheme.bodyLarge,
-                          ),
-                          SizedBox(height: 8),
-                          Text(
-                            "You will be redirected securely to complete the payment.",
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ),
                   ],
 
                   SizedBox(height: 32),
@@ -420,24 +469,6 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
                     ),
                     child: Column(
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text("Subtotal", style: Theme.of(context).textTheme.bodyMedium),
-                            Text("${(widget.totalAmount * 0.9).toStringAsFixed(2)} DT", style: Theme.of(context).textTheme.bodyMedium),
-                          ],
-                        ),
-                        SizedBox(height: 12),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text("Tax", style: Theme.of(context).textTheme.bodyMedium),
-                            Text("${(widget.totalAmount * 0.1).toStringAsFixed(2)} DT", style: Theme.of(context).textTheme.bodyMedium),
-                          ],
-                        ),
-                        SizedBox(height: 16),
-                        Divider(color: AppTheme.surfaceBorder),
-                        SizedBox(height: 16),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -459,7 +490,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
                   SizedBox(height: 40),
 
                   ElevatedButton(
-                    onPressed: isProcessing ? null : _simulatePayment,
+                    onPressed: isProcessing ? null : _processPayment,
                     style: ElevatedButton.styleFrom(
                       minimumSize: Size(double.infinity, 56),
                     ),

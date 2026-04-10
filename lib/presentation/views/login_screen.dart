@@ -5,7 +5,6 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../constants/theme.dart';
 import '../../providers/auth_provider.dart';
 import './widgets/custom_text_field.dart';
-import './widgets/password_strength_indicator.dart';
 import './widgets/social_login_button.dart';
 import 'home_screen.dart';
 import 'signup_screen.dart';
@@ -30,6 +29,35 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           );
 
       final authState = ref.read(authProvider);
+
+      // Check for blacklist / suspension
+      if (authState.isBlacklisted || authState.status == AuthStatus.suspended) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                Icon(Icons.block, color: AppTheme.danger),
+                SizedBox(width: 8),
+                Text("Account Suspended"),
+              ],
+            ),
+            content: Text("Your account has been flagged. Please contact support for assistance."),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  ref.read(authProvider.notifier).logout();
+                },
+                child: Text("OK", style: TextStyle(color: AppTheme.danger)),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
 
       if (authState.isAuthenticated) {
         Navigator.pushReplacement(
@@ -140,8 +168,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               return null;
             },
           ),
-          SizedBox(height: 10),
-          PasswordStrengthIndicator(password: _passwordController.text),
           SizedBox(height: 16),
           Align(
             alignment: Alignment.centerRight,

@@ -2,14 +2,15 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import 'login_screen.dart';
 import 'package:http/http.dart' as http;
 import 'dart:io';
 
 import '../../constants/api_config.dart';
 import '../../constants/theme.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/api_service.dart';
 import './widgets/custom_text_field.dart';
+import 'login_screen.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   @override
@@ -20,12 +21,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
 
   File? _profileImage;
+  File? _cinImage;
+  File? _licenseImage;
   final TextEditingController _fullNameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
 
   bool _isVerified = true;
   bool _isLoading = false;
+  bool _isUploadingKyc = false;
   String? _errorMessage;
 
   @override
@@ -88,6 +92,66 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       setState(() {
         _profileImage = File(pickedFile.path);
       });
+    }
+  }
+
+  Future<void> _pickAndUploadCIN() async {
+    final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      setState(() {
+        _cinImage = File(pickedFile.path);
+        _isUploadingKyc = true;
+      });
+      try {
+        final userId = ref.read(authProvider).userId;
+        if (userId != null) {
+          await ApiService.uploadKycDocuments(userId, _cinImage, null);
+          await ref.read(authProvider.notifier).refreshUserProfile();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("CIN uploaded successfully! ✅"), backgroundColor: AppTheme.success),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Failed to upload CIN: $e"), backgroundColor: AppTheme.danger),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isUploadingKyc = false);
+      }
+    }
+  }
+
+  Future<void> _pickAndUploadLicense() async {
+    final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      setState(() {
+        _licenseImage = File(pickedFile.path);
+        _isUploadingKyc = true;
+      });
+      try {
+        final userId = ref.read(authProvider).userId;
+        if (userId != null) {
+          await ApiService.uploadKycDocuments(userId, null, _licenseImage);
+          await ref.read(authProvider.notifier).refreshUserProfile();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("License uploaded successfully! ✅"), backgroundColor: AppTheme.success),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Failed to upload License: $e"), backgroundColor: AppTheme.danger),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isUploadingKyc = false);
+      }
     }
   }
 
@@ -169,6 +233,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authProvider);
+    final user = authState.user;
+
     return Scaffold(
       backgroundColor: AppTheme.surfaceGray,
       appBar: AppBar(
@@ -207,11 +274,81 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             ),
                           ),
                         ),
+
+                      // Blacklist warning banner
+                      if (user != null && user.isBlacklisted)
+                        Container(
+                          margin: EdgeInsets.only(bottom: 16),
+                          padding: EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.danger.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+                            border: Border.all(color: AppTheme.danger, width: 1.5),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.block, color: AppTheme.danger, size: 28),
+                              SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text("Account Suspended", style: TextStyle(color: AppTheme.danger, fontWeight: FontWeight.bold, fontSize: 16)),
+                                    SizedBox(height: 4),
+                                    Text("Your account has been flagged. Please contact support.", style: TextStyle(color: AppTheme.danger, fontSize: 13)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
                       SizedBox(height: 16),
                       _buildProfilePicture(),
-                      SizedBox(height: 24),
+                      SizedBox(height: 16),
+
+                      // User name & email
+                      if (user != null) ...[
+                        Text(user.fullName, style: Theme.of(context).textTheme.displayMedium),
+                        SizedBox(height: 4),
+                        Text(user.email, style: TextStyle(color: AppTheme.textMuted, fontSize: 14)),
+                      ],
+
+                      SizedBox(height: 16),
                       _buildVerificationBadge(),
-                      SizedBox(height: 32),
+                      SizedBox(height: 16),
+
+                      // Stats row
+                      if (user != null)
+                        Container(
+                          padding: EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceWhite,
+                            borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+                            boxShadow: AppTheme.softShadow,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _buildStat("${user.nbrFoisAllocation}", "Rentals"),
+                              Container(width: 1, height: 40, color: AppTheme.surfaceBorder),
+                              _buildStat("${user.age}", "Age"),
+                              Container(width: 1, height: 40, color: AppTheme.surfaceBorder),
+                              _buildStat(
+                                user.isBlacklisted ? "SUSPENDED" : "ACTIVE",
+                                "Status",
+                                color: user.isBlacklisted ? AppTheme.danger : AppTheme.success,
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      SizedBox(height: 24),
+
+                      // KYC Upload Section
+                      _buildKycSection(user),
+
+                      SizedBox(height: 24),
                       _buildInfoCard(),
                     ],
                   ),
@@ -224,7 +361,78 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
+  Widget _buildStat(String value, String label, {Color? color}) {
+    return Column(
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: color ?? AppTheme.textMain,
+          ),
+        ),
+        SizedBox(height: 4),
+        Text(label, style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+      ],
+    );
+  }
+
+  Widget _buildKycSection(user) {
+    return Container(
+      padding: EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceWhite,
+        borderRadius: BorderRadius.circular(AppTheme.radius2xl),
+        boxShadow: AppTheme.softShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.verified_user_outlined, size: 20, color: AppTheme.textMuted),
+              SizedBox(width: 8),
+              Text("KYC Documents", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.textMain)),
+            ],
+          ),
+          SizedBox(height: 8),
+          Text(
+            "Upload your CIN and driver's license for account verification.",
+            style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+          ),
+          SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: _isUploadingKyc ? null : _pickAndUploadCIN,
+            icon: Icon(user?.cinImageUrl != null ? Icons.check_circle : Icons.upload_file),
+            label: Text(user?.cinImageUrl != null ? "CIN ✓ Uploaded" : "Upload CIN"),
+            style: ElevatedButton.styleFrom(
+              minimumSize: Size(double.infinity, 48),
+              backgroundColor: user?.cinImageUrl != null ? AppTheme.success : AppTheme.brandBlue,
+            ),
+          ),
+          SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: _isUploadingKyc ? null : _pickAndUploadLicense,
+            icon: Icon(user?.licenseImageUrl != null ? Icons.check_circle : Icons.upload_file),
+            label: Text(user?.licenseImageUrl != null ? "License ✓ Uploaded" : "Upload License"),
+            style: ElevatedButton.styleFrom(
+              minimumSize: Size(double.infinity, 48),
+              backgroundColor: user?.licenseImageUrl != null ? AppTheme.success : AppTheme.brandBlue,
+            ),
+          ),
+          if (_isUploadingKyc)
+            Padding(
+              padding: EdgeInsets.only(top: 16),
+              child: Center(child: CircularProgressIndicator(color: AppTheme.brandBlue)),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildProfilePicture() {
+    final user = ref.read(authProvider).user;
     return Hero(
       tag: 'profilePicture',
       child: GestureDetector(
@@ -244,7 +452,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               child: ClipOval(
                 child: _profileImage != null
                     ? Image.file(_profileImage!, fit: BoxFit.cover)
-                    : Icon(Icons.person_outline, size: 48, color: AppTheme.brandBlue),
+                    : (user?.profilePicture != null && user!.profilePicture!.isNotEmpty
+                        ? Image.network(user.profilePicture!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Icon(Icons.person_outline, size: 48, color: AppTheme.brandBlue))
+                        : Icon(Icons.person_outline, size: 48, color: AppTheme.brandBlue)),
               ),
             ),
             Positioned(

@@ -86,18 +86,17 @@ class BookingNotifier extends Notifier<BookingState> {
     if (userId == null) return null;
 
     try {
-      final result = await ApiService.createBooking(
+      final booking = await ApiService.createBooking(BookingRequest(
         userId: userId,
         carId: carId,
         startDate: startDate,
         endDate: endDate,
-        locationBeforeRenting: pickupLocation,
-        locationAfterRenting: dropoffLocation,
-        estimatedLocation: dropoffLocation,
-      );
+        pickupLocation: pickupLocation,
+        dropoffLocation: dropoffLocation,
+      ));
       // Refresh bookings list after creation
       await fetchBookings();
-      return result;
+      return booking.toJson();
     } catch (e) {
       print('❌ Error creating booking: $e');
       return null;

@@ -42,6 +42,8 @@ class _EstimationScreenState extends ConsumerState<EstimationScreen>
     "Ariana": "ariana",
     "Sfax": "sfax",
     "Monastir": "monastir",
+    "Djerba": "djerba",
+    "Hammamet": "hammamet",
   };
 
   String _mapLocationToKey(String label) =>

@@ -8,6 +8,8 @@ import '../../providers/booking_provider.dart';
 import '../../models/booking_model.dart';
 import '../../services/api_service.dart';
 import 'NFCKeyScreen.dart';
+import 'home_screen.dart';
+import 'widgets/skeleton_loader.dart';
 
 class BookingDashboardScreen extends ConsumerStatefulWidget {
   @override
@@ -63,7 +65,7 @@ class _BookingDashboardScreenState extends ConsumerState<BookingDashboardScreen>
         ),
       ),
       body: bookingState.isLoading
-          ? Center(child: CircularProgressIndicator(color: AppTheme.brandBlue))
+          ? SkeletonList(itemCount: 3, itemHeight: 200, padding: EdgeInsets.all(24))
           : TabBarView(
               controller: _tabController,
               children: [
@@ -82,7 +84,16 @@ class _BookingDashboardScreenState extends ConsumerState<BookingDashboardScreen>
           physics: const AlwaysScrollableScrollPhysics(),
           child: Container(
             height: MediaQuery.of(context).size.height * 0.6,
-            child: _buildEmptyState(Icons.car_rental, "No active rentals", "You don't have any ongoing or upcoming rentals."),
+            child: _buildEmptyState(
+              Icons.car_rental,
+              "No active rentals",
+              "You don't have any ongoing or upcoming rentals.",
+              ctaLabel: "Browse Cars",
+              onCtaTap: () => Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => HomeScreen()),
+                (route) => false,
+              ),
+            ),
           ),
         ),
       );
@@ -100,14 +111,23 @@ class _BookingDashboardScreenState extends ConsumerState<BookingDashboardScreen>
   }
 
   Widget _buildHistoryTab(BookingState bookingState) {
-     if (bookingState.history.isEmpty) {
+   if (bookingState.history.isEmpty) {
       return RefreshIndicator(
         onRefresh: _refresh,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           child: Container(
             height: MediaQuery.of(context).size.height * 0.6,
-            child: _buildEmptyState(Icons.history, "No rental history", "Your past trips will appear here."),
+            child: _buildEmptyState(
+              Icons.history,
+              "No rental history yet",
+              "Your past trips will appear here once you complete a rental.",
+              ctaLabel: "Browse Cars",
+              onCtaTap: () => Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => HomeScreen()),
+                (route) => false,
+              ),
+            ),
           ),
         ),
       );
@@ -364,23 +384,36 @@ class _BookingDashboardScreenState extends ConsumerState<BookingDashboardScreen>
     );
   }
 
-  Widget _buildEmptyState(IconData icon, String title, String subtitle) {
+  Widget _buildEmptyState(IconData icon, String title, String subtitle, {String? ctaLabel, VoidCallback? onCtaTap}) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            padding: EdgeInsets.all(24),
+            padding: EdgeInsets.all(28),
             decoration: BoxDecoration(
               color: AppTheme.surfaceWhite,
               shape: BoxShape.circle,
+              boxShadow: AppTheme.softShadow,
             ),
-            child: Icon(icon, size: 60, color: AppTheme.textMuted),
+            child: Icon(icon, size: 56, color: AppTheme.textMuted),
           ),
           SizedBox(height: 24),
           Text(title, style: Theme.of(context).textTheme.displaySmall),
           SizedBox(height: 8),
-          Text(subtitle, style: TextStyle(color: AppTheme.textMuted)),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 48),
+            child: Text(subtitle, textAlign: TextAlign.center, style: TextStyle(color: AppTheme.textMuted, height: 1.5)),
+          ),
+          if (ctaLabel != null && onCtaTap != null) ...[
+            SizedBox(height: 32),
+            ElevatedButton.icon(
+              onPressed: onCtaTap,
+              icon: Icon(Icons.search),
+              label: Text(ctaLabel),
+              style: ElevatedButton.styleFrom(minimumSize: Size(200, 48)),
+            ),
+          ],
         ],
       ),
     );

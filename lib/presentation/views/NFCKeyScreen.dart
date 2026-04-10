@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../../constants/api_config.dart';
 import '../../constants/theme.dart';
 import '../../services/api_service.dart';
+import 'widgets/skeleton_loader.dart';
 
 class NFCKeyScreen extends ConsumerStatefulWidget {
   final String carId;
@@ -19,6 +20,7 @@ class NFCKeyScreen extends ConsumerStatefulWidget {
   final String dropOffLocation;
   final double estimatedPrice;
   final String bookingId;
+  final String nfcKey; // Server-generated key passed from BookingDashboard
 
   const NFCKeyScreen({
     Key? key,
@@ -29,6 +31,7 @@ class NFCKeyScreen extends ConsumerStatefulWidget {
     required this.dropOffLocation,
     required this.estimatedPrice,
     required this.bookingId,
+    required this.nfcKey,
   }) : super(key: key);
 
   @override
@@ -49,7 +52,8 @@ class _NFCKeyScreenState extends ConsumerState<NFCKeyScreen>
   @override
   void initState() {
     super.initState();
-    _fetchNfcKeyFromServer();
+    // Use the server-generated key passed as constructor param
+    nfcKey = widget.nfcKey;
     startCountdown();
     _fetchCarDetails();
 
@@ -64,15 +68,6 @@ class _NFCKeyScreenState extends ConsumerState<NFCKeyScreen>
     ));
 
     _animationController.repeat(reverse: true);
-  }
-
-  Future<void> _fetchNfcKeyFromServer() async {
-    final result = await ApiService.generateNfcKey(widget.bookingId);
-    if (result != null) {
-      setState(() {
-        nfcKey = result['nfcKey'];
-      });
-    }
   }
 
   void startCountdown() {
@@ -94,19 +89,15 @@ class _NFCKeyScreenState extends ConsumerState<NFCKeyScreen>
   Future<void> _fetchCarDetails() async {
     setState(() => _isLoading = true);
     try {
-      final response = await http.get(
-        Uri.parse('$carEndpoint/${widget.carId}'),
-        headers: {'Content-Type': 'application/json'},
-      );
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          _carDetails = data;
-          _isLoading = false;
-        });
-      } else {
-        setState(() => _isLoading = false);
-      }
+      final car = await ApiService.getCarById(widget.carId);
+      setState(() {
+        _carDetails = {
+          'marque': car.marque,
+          'matricule': car.matricule,
+          'photo': car.photo,
+        };
+        _isLoading = false;
+      });
     } catch (e) {
       setState(() => _isLoading = false);
     }
@@ -240,7 +231,7 @@ class _NFCKeyScreenState extends ConsumerState<NFCKeyScreen>
       ),
       body: SafeArea(
         child: _isLoading
-            ? Center(child: CircularProgressIndicator(color: AppTheme.brandBlue))
+            ? SkeletonList(itemCount: 4, itemHeight: 100)
             : SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
                 child: Column(

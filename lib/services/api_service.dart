@@ -115,7 +115,25 @@ class ApiService {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? refreshToken = prefs.getString("refreshToken");
     if (refreshToken == null) return false;
-    // For now, no refresh endpoint is implemented in backend, just fallback
+
+    try {
+      final response = await http.post(
+        Uri.parse('$authEndpoint/refresh'),
+        body: jsonEncode({'refreshToken': refreshToken}),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        await prefs.setString('accessToken', data['accessToken']);
+        if (data['refreshToken'] != null) {
+          await prefs.setString('refreshToken', data['refreshToken']);
+        }
+        return true;
+      }
+    } catch (e) {
+      // Refresh failed
+    }
     return false;
   }
 
@@ -398,5 +416,36 @@ class ApiService {
     var resStr = await res.stream.bytesToString();
     if (res.statusCode == 201) return jsonDecode(resStr);
     throw Exception("Failed to submit reclamation: $resStr");
+  }
+
+  /// Alias for notification provider compatibility
+  static Future<Map<String, dynamic>> getUserNotifications(String userId) async {
+    final response = await _request('GET', '$notificationEndpoint?userId=$userId');
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    }
+    return {'notifications': []};
+  }
+
+  /// Confirm booking payment after successful gateway callback
+  static Future<void> confirmBookingPayment(String bookingId, String paymentId) async {
+    final response = await _request('POST', '$bookingEndpoint/$bookingId/confirm-payment', body: {
+      'paymentId': paymentId,
+    });
+    if (response.statusCode != 200) {
+      throw Exception("Failed to confirm payment: ${response.body}");
+    }
+  }
+
+  /// Fetch user's reclamations
+  static Future<List<Map<String, dynamic>>> getMyReclamations(String userId) async {
+    final response = await _request('GET', '$reclamationEndpoint?userId=$userId');
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data is List) return data.cast<Map<String, dynamic>>();
+      if (data['reclamations'] is List) return (data['reclamations'] as List).cast<Map<String, dynamic>>();
+      return [];
+    }
+    return [];
   }
 }

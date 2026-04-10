@@ -8,12 +8,16 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../constants/theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/car_provider.dart';
+import '../../models/car.dart';
 import '../../providers/notification_provider.dart';
 import 'login_screen.dart';
 import 'estimation_screen.dart';
 import 'profile_screen.dart';
 import 'reclamation_screen.dart';
 import 'AboutUsScreen.dart';
+import 'notifications_screen.dart';
+import 'widgets/skeleton_loader.dart';
+import 'widgets/error_state.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   @override
@@ -573,7 +577,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 IconButton(
                   icon: Icon(Icons.notifications_none, color: AppTheme.textMain),
                   onPressed: () {
-                    // Show notifications
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationsScreen()));
                   },
                 ),
                 if (badgeCount > 0)
@@ -610,24 +614,56 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             buildStepIndicator(),
             Expanded(
               child: carsAsync.when(
-                data: (_) => _buildMapWithMarkers(availableCars.cast<Car>()),
-                loading: () => Center(
-                  child: CircularProgressIndicator(color: AppTheme.brandBlue),
-                ),
-                error: (e, _) => Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                data: (_) {
+                  return Stack(
                     children: [
-                      Icon(Icons.error_outline, color: AppTheme.danger, size: 48),
-                      SizedBox(height: 16),
-                      Text('Failed to load cars', style: TextStyle(color: AppTheme.textMuted)),
-                      SizedBox(height: 8),
-                      TextButton(
-                        onPressed: () => ref.invalidate(pairedCarsProvider),
-                        child: Text('Retry'),
-                      ),
+                      _buildMapWithMarkers(availableCars),
+                      if (availableCars.isEmpty)
+                        Positioned.fill(
+                          child: Container(
+                            color: AppTheme.surfaceWhite.withOpacity(0.7),
+                            child: Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    padding: EdgeInsets.all(28),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.surfaceWhite,
+                                      shape: BoxShape.circle,
+                                      boxShadow: AppTheme.softShadow,
+                                    ),
+                                    child: Icon(Icons.directions_car_outlined, size: 56, color: AppTheme.textMuted),
+                                  ),
+                                  SizedBox(height: 24),
+                                  Text("No cars available near you", style: Theme.of(context).textTheme.displaySmall),
+                                  SizedBox(height: 8),
+                                  Text("Try zooming out or refreshing.", style: TextStyle(color: AppTheme.textMuted)),
+                                  SizedBox(height: 24),
+                                  ElevatedButton.icon(
+                                    onPressed: () {
+                                      _mapController.move(
+                                        _userLocation ?? LatLng(36.8065, 10.1815),
+                                        10,
+                                      );
+                                      ref.invalidate(pairedCarsProvider);
+                                    },
+                                    icon: Icon(Icons.zoom_out_map),
+                                    label: Text("Zoom Out"),
+                                    style: ElevatedButton.styleFrom(minimumSize: Size(180, 48)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
-                  ),
+                  );
+                },
+                loading: () => SkeletonList(itemCount: 2, itemHeight: 160),
+                error: (e, _) => ErrorState(
+                  message: 'Failed to load cars. Please check your network.',
+                  onRetry: () => ref.invalidate(pairedCarsProvider),
                 ),
               ),
             ),

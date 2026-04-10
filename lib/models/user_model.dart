@@ -7,7 +7,6 @@ class UserModel {
   final String? cinImageUrl;
   final String? licenseImageUrl;
   final bool isVerified;
-  final bool isVerified;
   final bool isBlacklisted;
   final int nbrFoisAllocation;
   final int age;
@@ -36,7 +35,6 @@ class UserModel {
       phone: data['num_phone'] as String?,
       profilePicture: data['profile_picture'] as String?,
       cinImageUrl: data['cinImageUrl'] as String?,
-      licenseImageUrl: data['licenseImageUrl'] as String?,
       licenseImageUrl: data['licenseImageUrl'] as String?,
       isVerified: data['isVerified'] ?? false,
       isBlacklisted: data['isBlacklisted'] ?? false,
