@@ -71,7 +71,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         setState(() {
           _fullNameController.text = user["fullName"] ?? "";
           _emailController.text = user["email"] ?? "";
-          _phoneController.text = user["num_phone"] ?? "";
+          _phoneController.text = user["phone"] ?? "";
           _isVerified = user["isVerified"] ?? false;
         });
       } else {
@@ -177,11 +177,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         var uri = Uri.parse("$baseUrl/$userId");
 
         var request = http.MultipartRequest('PUT', uri);
-        request.fields['num_phone'] = _phoneController.text.trim();
+        request.fields['phone'] = _phoneController.text.trim();
 
         if (_profileImage != null) {
           request.files.add(await http.MultipartFile.fromPath(
-            'profile_picture',
+            'photo',
             _profileImage!.path,
           ));
         }
@@ -190,22 +190,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         var responseData = await response.stream.bytesToString();
 
         if (response.statusCode == 200) {
-          var data = jsonDecode(responseData);
-
+          // Clear the local selected file so the UI switches to loading the network image
           setState(() {
-            _phoneController.text = data["user"]["num_phone"];
-            if (data["user"]["profile_picture"] != null) {
-              _profileImage = File(data["user"]["profile_picture"]);
-            }
+            _profileImage = null;
             _isLoading = false;
           });
 
-          // Refresh user profile in the auth provider
+          // Refresh user profile in the auth provider (this updates the UI automatically)
           await ref.read(authProvider.notifier).refreshUserProfile();
+          await _loadUserProfile(); // Re-populate the text fields
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Profile Updated Successfully! ✅")),
-          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Profile Updated Successfully! ✅")),
+            );
+          }
         } else {
           var errorData = jsonDecode(responseData);
           setState(() {

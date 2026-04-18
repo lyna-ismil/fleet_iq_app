@@ -62,7 +62,9 @@ class Car {
       deviceId: json['deviceId'] as String?,
       healthStatus: json['healthStatus'] ?? "OK",
       lastKnownLocation: location,
-      availabilityStatus: json['availabilityStatus'] ?? "AVAILABLE",
+      availabilityStatus: (json['availability'] != null && json['availability'] is Map)
+          ? json['availability']['status'] ?? "AVAILABLE"
+          : json['availabilityStatus'] ?? "AVAILABLE",
     );
   }
 

@@ -127,7 +127,7 @@ class AboutUsScreen extends StatelessWidget {
           _buildSection(
             context,
             "Contact Us",
-            "Email: contact@fleetiq.com\nPhone: +216 123 456 789\nAddress: Tunis, Tunisia",
+            "Email: contact@NexDrive.com\nPhone: +216 123 456 789\nAddress: Tunis, Tunisia",
             Icons.contact_mail_outlined,
           ),
         ],

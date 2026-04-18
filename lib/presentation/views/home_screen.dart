@@ -6,6 +6,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../constants/theme.dart';
+import '../../constants/api_config.dart';
+import '../../services/api_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/car_provider.dart';
 import '../../models/car.dart';
@@ -312,10 +314,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  Widget _buildCarDetailsSheet(Car car) {
+  Widget _buildCarDetailsSheet(Car initialCar) {
     String distanceStr = "Unknown dist";
-    if (car.calculatedDistance != null) {
-      double d = car.calculatedDistance!;
+    if (initialCar.calculatedDistance != null) {
+      double d = initialCar.calculatedDistance!;
       if (d > 1000) {
         distanceStr = "${(d / 1000).toStringAsFixed(1)} km away";
       } else {
@@ -329,164 +331,172 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         color: AppTheme.surfaceWhite,
         borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            height: 5,
-            width: 40,
-            margin: EdgeInsets.symmetric(vertical: 10),
-            decoration: BoxDecoration(
-              color: AppTheme.surfaceBorder,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            alignment: Alignment.center,
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              physics: BouncingScrollPhysics(),
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Premium Photo Frame
-                    Center(
-                      child: Container(
-                        height: 160,
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          color: AppTheme.surfaceGray,
-                          borderRadius: BorderRadius.circular(AppTheme.radiusXl),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(AppTheme.radiusXl),
-                          child: (car.photo != null && car.photo!.isNotEmpty)
-                            ? Image.network(
-                                car.photo!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Icon(Icons.directions_car, size: 80, color: AppTheme.textMuted),
-                              )
-                            : Icon(Icons.directions_car, size: 80, color: AppTheme.textMuted),
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: 24),
-                    
-                    Text(
-                      car.marque,
-                      style: Theme.of(context).textTheme.displayLarge,
-                    ),
-                    Text(
-                      car.matricule,
-                      style: TextStyle(fontSize: 16, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
-                    ),
-                    SizedBox(height: 16),
+      child: FutureBuilder<Car>(
+        future: ApiService.getCarById(initialCar.id),
+        builder: (context, snapshot) {
+          // Use fresh car if available, otherwise fallback to initialCar to prevent empty flashes
+          final car = snapshot.data ?? initialCar;
+          final isLoading = snapshot.connectionState == ConnectionState.waiting;
 
-                    Row(
+          // Helper to resolve relative image URLs from the backend
+          String getImageUrl(String path) {
+            if (path.startsWith('http')) return path;
+            return '$baseApiUrl$path'; // Using baseApiUrl from api_config.dart
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                height: 5,
+                width: 40,
+                margin: EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceBorder,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+              ),
+              if (isLoading)
+                LinearProgressIndicator(color: AppTheme.brandBlue, minHeight: 2),
+              Expanded(
+                child: SingleChildScrollView(
+                  physics: BouncingScrollPhysics(),
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: AppTheme.brandBlue.withOpacity(0.05),
-                            borderRadius: BorderRadius.circular(20),
+                        // Premium Photo Frame
+                        Center(
+                          child: Container(
+                            height: 160,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: AppTheme.surfaceGray,
+                              borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+                              child: (car.photo != null && car.photo!.isNotEmpty)
+                                  ? Image.network(
+                                      getImageUrl(car.photo!),
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => Icon(Icons.directions_car, size: 80, color: AppTheme.textMuted),
+                                    )
+                                  : Icon(Icons.directions_car, size: 80, color: AppTheme.textMuted),
+                            ),
                           ),
+                        ),
+                        SizedBox(height: 24),
+                        
+                        Text(
+                          car.marque,
+                          style: Theme.of(context).textTheme.displayLarge,
+                        ),
+                        Text(
+                          car.matricule,
+                          style: TextStyle(fontSize: 16, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
+                        ),
+                        SizedBox(height: 16),
+
+                        Row(
+                          children: [
+                            Container(
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: AppTheme.brandBlue.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.location_on, color: AppTheme.brandBlue, size: 16),
+                                  SizedBox(width: 4),
+                                  Text(distanceStr, style: TextStyle(fontSize: 14, color: AppTheme.brandBlue, fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                            ),
+                            SizedBox(width: 12),
+                            Container(
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: car.healthStatus == "OK" ? AppTheme.success.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(car.healthStatus, style: TextStyle(fontSize: 14, color: car.healthStatus == "OK" ? AppTheme.success : Colors.orange, fontWeight: FontWeight.w600)),
+                            ),
+                          ],
+                        ),
+                        
+                        if (car.cityRestriction && car.allowedCities.isNotEmpty) ...[
+                          SizedBox(height: 16),
+                          Container(
+                            padding: EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppTheme.starRating.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppTheme.starRating),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.warning_amber_rounded, color: AppTheme.starRating),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    "City Restrictions: ${car.allowedCities.join(', ')}",
+                                    style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w500, fontSize: 13),
+                                  ),
+                                )
+                              ],
+                            ),
+                          )
+                        ],
+
+                        if (car.description != null && car.description!.isNotEmpty) ...[
+                          SizedBox(height: 24),
+                          Text("Description", style: Theme.of(context).textTheme.bodyLarge),
+                          SizedBox(height: 8),
+                          Text(car.description!, style: TextStyle(color: AppTheme.textMuted, height: 1.5)),
+                        ],
+
+                        SizedBox(height: 32),
+                        ElevatedButton(
+                          onPressed: isLoading ? null : () {
+                            if (!mounted) return;
+                            
+                            String pickupLocation = car.lastKnownLocation != null
+                                ? "${car.lastKnownLocation!.latitude},${car.lastKnownLocation!.longitude}"
+                                : '';
+                            
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => EstimationScreen(
+                                  carId: car.id,
+                                  pickupLocation: pickupLocation,
+                                ),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 56)),
                           child: Row(
-                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.location_on, color: AppTheme.brandBlue, size: 16),
-                              SizedBox(width: 4),
-                              Text(distanceStr, style: TextStyle(fontSize: 14, color: AppTheme.brandBlue, fontWeight: FontWeight.w600)),
+                              Icon(Icons.directions_car),
+                              SizedBox(width: 8),
+                              Text('Book This Premium Car'),
                             ],
                           ),
                         ),
-                        SizedBox(width: 12),
-                        Container(
-                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: car.healthStatus == "OK" ? AppTheme.success.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(car.healthStatus, style: TextStyle(fontSize: 14, color: car.healthStatus == "OK" ? AppTheme.success : Colors.orange, fontWeight: FontWeight.w600)),
-                        ),
-                        SizedBox(width: 12),
-                        Container(
-                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: AppTheme.surfaceGray,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(car.energyType, style: TextStyle(fontSize: 14, color: AppTheme.textMain, fontWeight: FontWeight.w600)),
-                        ),
                       ],
                     ),
-                    
-                    if (car.cityRestriction) ...[
-                      SizedBox(height: 16),
-                      Container(
-                        padding: EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppTheme.starRating.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppTheme.starRating),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.warning_amber_rounded, color: AppTheme.starRating),
-                            SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                "City Restrictions: ${car.allowedCities.isEmpty ? 'Regional only' : car.allowedCities.join(', ')}",
-                                style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w500, fontSize: 13),
-                              ),
-                            )
-                          ],
-                        ),
-                      )
-                    ],
-
-                    if (car.description != null && car.description!.isNotEmpty) ...[
-                      SizedBox(height: 24),
-                      Text("Description", style: Theme.of(context).textTheme.bodyLarge),
-                      SizedBox(height: 8),
-                      Text(car.description!, style: TextStyle(color: AppTheme.textMuted, height: 1.5)),
-                    ],
-
-                    SizedBox(height: 32),
-                    ElevatedButton(
-                      onPressed: () {
-                        if (!mounted) return;
-                        
-                        String pickupLocation = car.lastKnownLocation != null
-                            ? "${car.lastKnownLocation!.latitude},${car.lastKnownLocation!.longitude}"
-                            : '';
-                        
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => EstimationScreen(
-                              carId: car.id,
-                              pickupLocation: pickupLocation,
-                            ),
-                          ),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 56)),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.directions_car),
-                          SizedBox(width: 8),
-                          Text('Book This Premium Car'),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ),
-        ],
+            ],
+          );
+        }
       ),
     );
   }
