@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +15,7 @@ import '../../models/car.dart';
 import '../../providers/notification_provider.dart';
 import 'login_screen.dart';
 import 'estimation_screen.dart';
+import 'kyc_verification_screen.dart';
 import 'profile_screen.dart';
 import 'reclamation_screen.dart';
 import 'AboutUsScreen.dart';
@@ -71,7 +73,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       LocationPermission permission;
 
       serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return;
+      if (!serviceEnabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              padding: EdgeInsets.zero,
+              behavior: SnackBarBehavior.floating,
+              content: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: ShapeDecoration(
+                  color: AppTheme.brandBlue,
+                  shape: const SpeechBubbleShape(),
+                  shadows: AppTheme.softShadow,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Please turn on your GPS to find nearby cars.",
+                      style: TextStyle(color: Colors.white, fontSize: 15),
+                    ),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.bottomRight,
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Geolocator.openLocationSettings();
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text("Settings"),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+        return;
+      }
 
       permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
@@ -178,59 +228,101 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 userAgentPackageName: 'com.example.fleetiq',
               ),
               MarkerLayer(
-                markers: availableCars
-                    .where((car) => car.lastKnownLocation != null)
-                    .map((car) {
-                      final lat = car.lastKnownLocation!.latitude;
-                      final lng = car.lastKnownLocation!.longitude;
-
-                      return Marker(
-                        point: LatLng(lat, lng),
-                        width: 60,
-                        height: 60,
-                        child: TweenAnimationBuilder<double>(
-                          tween: Tween<double>(begin: 0.0, end: 1.0),
-                          duration: Duration(milliseconds: 800),
-                          curve: Curves.elasticOut,
-                          builder: (context, value, child) {
-                            var pinColor = AppTheme.success;
-                            var pinIcon = Icons.directions_car;
-                            if (car.healthStatus == "WARN") {
-                              pinColor = Colors.orange;
-                              pinIcon = Icons.warning_amber_rounded;
-                            } else if (car.healthStatus == "CRITICAL") {
-                              pinColor = AppTheme.danger;
-                              pinIcon = Icons.error_outline;
-                            }
-                            return Transform.scale(
-                              scale: value,
-                              child: GestureDetector(
-                                onTap: () {
-                                  showModalBottomSheet(
-                                    context: context,
-                                    isScrollControlled: true,
-                                    backgroundColor: Colors.transparent,
-                                    builder: (ctx) =>
-                                        _buildCarDetailsSheet(car),
-                                  );
-                                },
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.surfaceWhite,
-                                    shape: BoxShape.circle,
-                                    boxShadow: AppTheme.softShadow,
-                                    border: Border.all(color: pinColor, width: 2),
-                                  ),
-                                  padding: EdgeInsets.all(8),
-                                  child: Icon(pinIcon, color: pinColor, size: 24),
-                                ),
+                markers: [
+                  // ── User location "blue dot" ──
+                  if (_userLocation != null)
+                    Marker(
+                      point: _userLocation!,
+                      width: 40,
+                      height: 40,
+                      child: Center(
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // Outer semi-transparent accuracy circle
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.blue.withOpacity(0.15),
                               ),
-                            );
-                          },
+                            ),
+                            // Inner solid blue dot with white border
+                            Container(
+                              width: 18,
+                              height: 18,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.blue,
+                                border: Border.all(color: Colors.white, width: 3),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.blue.withOpacity(0.4),
+                                    blurRadius: 6,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                      );
-                    })
-                    .toList(),
+                      ),
+                    ),
+                  // ── Car markers ──
+                  ...availableCars
+                      .where((car) => car.lastKnownLocation != null)
+                      .map((car) {
+                        final lat = car.lastKnownLocation!.latitude;
+                        final lng = car.lastKnownLocation!.longitude;
+
+                        return Marker(
+                          point: LatLng(lat, lng),
+                          width: 60,
+                          height: 60,
+                          child: TweenAnimationBuilder<double>(
+                            tween: Tween<double>(begin: 0.0, end: 1.0),
+                            duration: Duration(milliseconds: 800),
+                            curve: Curves.elasticOut,
+                            builder: (context, value, child) {
+                              var pinColor = AppTheme.success;
+                              var pinIcon = Icons.directions_car;
+                              if (car.healthStatus == "WARN") {
+                                pinColor = Colors.orange;
+                                pinIcon = Icons.warning_amber_rounded;
+                              } else if (car.healthStatus == "CRITICAL") {
+                                pinColor = AppTheme.danger;
+                                pinIcon = Icons.error_outline;
+                              }
+                              return Transform.scale(
+                                scale: value,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    showModalBottomSheet(
+                                      context: context,
+                                      isScrollControlled: true,
+                                      backgroundColor: Colors.transparent,
+                                      builder: (ctx) =>
+                                          _buildCarDetailsSheet(car),
+                                    );
+                                  },
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.surfaceWhite,
+                                      shape: BoxShape.circle,
+                                      boxShadow: AppTheme.softShadow,
+                                      border: Border.all(color: pinColor, width: 2),
+                                    ),
+                                    padding: EdgeInsets.all(8),
+                                    child: Icon(pinIcon, color: pinColor, size: 24),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        );
+                      }),
+                ],
               ),
             ],
           ),
@@ -464,7 +556,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         ElevatedButton(
                           onPressed: isLoading ? null : () {
                             if (!mounted) return;
-                            
+
+                            final user = ref.read(authProvider).user;
+                            if (user == null || user.isVerified == false) {
+                              String pickupLocation = car.lastKnownLocation != null
+                                  ? "${car.lastKnownLocation!.latitude},${car.lastKnownLocation!.longitude}"
+                                  : '';
+                              
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => KycVerificationScreen(
+                                    carId: car.id,
+                                    pickupLocation: pickupLocation,
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+
                             String pickupLocation = car.lastKnownLocation != null
                                 ? "${car.lastKnownLocation!.latitude},${car.lastKnownLocation!.longitude}"
                                 : '';
@@ -528,7 +638,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // Convert Car models back to Map for existing marker/sheet code
     final availableCars = carsAsync.when(
       data: (cars) {
-        final filtered = cars.where((c) => c.isPaired && c.isAvailable).toList();
+        final filtered = cars.where((c) => c.isAvailable).toList();
         for (var c in filtered) {
           if (_userLocation != null && c.lastKnownLocation != null) {
             final distance = const Distance();
@@ -843,4 +953,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       contentPadding: EdgeInsets.symmetric(horizontal: 24, vertical: 4),
     );
   }
+}
+
+/// A custom [ShapeBorder] that draws a rounded rectangle with a small
+/// downward-pointing triangle "tail" near the bottom-left corner, giving
+/// the appearance of a speech bubble / tooltip.
+class SpeechBubbleShape extends ShapeBorder {
+  const SpeechBubbleShape();
+
+  @override
+  EdgeInsetsGeometry get dimensions => const EdgeInsets.only(bottom: 12.0);
+
+  @override
+  ui.Path getInnerPath(Rect rect, {TextDirection? textDirection}) {
+    return getOuterPath(rect, textDirection: textDirection);
+  }
+
+  @override
+  ui.Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
+    final body = RRect.fromRectAndRadius(
+      Rect.fromLTRB(rect.left, rect.top, rect.right, rect.bottom - 12.0),
+      const Radius.circular(16.0),
+    );
+
+    final path = ui.Path()..addRRect(body);
+
+    // Small triangle tail pointing downward, offset 60px from the left edge
+    final tailLeft = rect.left + 60.0;
+    path.moveTo(tailLeft, rect.bottom - 12.0);
+    path.lineTo(tailLeft + 10.0, rect.bottom);
+    path.lineTo(tailLeft + 20.0, rect.bottom - 12.0);
+    path.close();
+
+    return path;
+  }
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {}
+
+  @override
+  ShapeBorder scale(double t) => const SpeechBubbleShape();
 }

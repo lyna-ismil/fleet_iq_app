@@ -4,7 +4,6 @@ import 'package:animate_do/animate_do.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../constants/api_config.dart';
 import '../../constants/theme.dart';
-import 'home_screen.dart';
 import './widgets/custom_text_field.dart';
 import './widgets/password_strength_indicator.dart';
 import 'login_screen.dart';
@@ -26,7 +25,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   String? _errorMessage;
   bool _isLoading = false;
-  bool _isEHouwiyaLoading = false;
 
   @override
   void dispose() {
@@ -91,80 +89,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
     }
   }
 
-  void _signUpWithEHouwiya() async {
-    setState(() {
-      _isEHouwiyaLoading = true;
-    });
-
-    // Mock: simulate e-Houwiya authentication delay
-    await Future.delayed(Duration(seconds: 2));
-
-    setState(() {
-      _isEHouwiyaLoading = false;
-    });
-
-    if (!mounted) return;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext ctx) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTheme.radius2xl),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTheme.success.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.check_circle,
-                    color: AppTheme.success, size: 48),
-              ),
-              SizedBox(height: 20),
-              Text(
-                "e-Houwiya Authentication Successful (Mocked)",
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textMain,
-                ),
-              ),
-              SizedBox(height: 8),
-              Text(
-                "Your identity has been verified via Mobile ID.",
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppTheme.textMuted,
-                ),
-              ),
-              SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => HomeScreen()),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  minimumSize: Size(double.infinity, 48),
-                ),
-                child: Text("Continue"),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -192,38 +116,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
-                SizedBox(height: 32),
-
-                // e-Houwiya Button
-                FadeInUp(
-                  duration: Duration(milliseconds: 700),
-                  child: _buildEHouwiyaButton(),
-                ),
-
-                SizedBox(height: 24),
-
-                // Divider
-                FadeInUp(
-                  duration: Duration(milliseconds: 750),
-                  child: Row(
-                    children: [
-                      Expanded(
-                          child: Divider(color: AppTheme.surfaceBorder)),
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          "Or sign up with email",
-                          style: TextStyle(
-                              color: AppTheme.textMuted, fontSize: 14),
-                        ),
-                      ),
-                      Expanded(
-                          child: Divider(color: AppTheme.surfaceBorder)),
-                    ],
-                  ),
-                ),
-
-                SizedBox(height: 24),
+                SizedBox(height: 40),
 
                 // Standard Form
                 FadeInUp(
@@ -374,73 +267,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEHouwiyaButton() {
-    const Color tunisianRed = Color(0xFFE70013);
-
-    return GestureDetector(
-      onTap: _isEHouwiyaLoading ? null : _signUpWithEHouwiya,
-      child: AnimatedContainer(
-        duration: Duration(milliseconds: 200),
-        padding: EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: AppTheme.surfaceWhite,
-          borderRadius: BorderRadius.circular(9999),
-          border: Border.all(color: tunisianRed, width: 2),
-          boxShadow: [
-            BoxShadow(
-              color: tunisianRed.withOpacity(0.1),
-              blurRadius: 16,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (_isEHouwiyaLoading) ...[
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  color: tunisianRed,
-                  strokeWidth: 2,
-                ),
-              ),
-              SizedBox(width: 12),
-              Text(
-                "Authenticating...",
-                style: TextStyle(
-                  color: tunisianRed,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ] else ...[
-              Container(
-                padding: EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: tunisianRed,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.fingerprint,
-                    color: AppTheme.surfaceWhite, size: 20),
-              ),
-              SizedBox(width: 12),
-              Text(
-                "Sign up with e-Houwiya (Mobile ID)",
-                style: TextStyle(
-                  color: tunisianRed,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ],
         ),
       ),
     );

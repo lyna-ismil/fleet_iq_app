@@ -448,4 +448,43 @@ class ApiService {
     }
     return [];
   }
+
+  // ─── KYC Microservice ──────────────────────────────────────
+
+  /// Send 4 document images to the Python KYC microservice for verification.
+  /// Returns the JSON response: {success, verified, failure_reasons, extracted_cin, ...}
+  static Future<Map<String, dynamic>> processKyc(
+    File cinFront,
+    File cinBack,
+    File permis,
+    File selfie,
+  ) async {
+    final uri = Uri.parse('$kycApiUrl/kyc/process');
+    final request = http.MultipartRequest('POST', uri);
+
+    request.files.add(await http.MultipartFile.fromPath('cin_front', cinFront.path));
+    request.files.add(await http.MultipartFile.fromPath('cin_back', cinBack.path));
+    request.files.add(await http.MultipartFile.fromPath('permis', permis.path));
+    request.files.add(await http.MultipartFile.fromPath('selfie', selfie.path));
+
+    final streamedResponse = await request.send();
+    final responseBody = await streamedResponse.stream.bytesToString();
+
+    if (streamedResponse.statusCode == 200) {
+      return jsonDecode(responseBody);
+    } else {
+      throw Exception('KYC processing failed (${streamedResponse.statusCode}): $responseBody');
+    }
+  }
+
+  /// After KYC passes, mark the user as verified in the main Node.js backend.
+  static Future<void> markUserAsVerified(String userId, String extractedCin) async {
+    final response = await _request('PUT', '$userEndpoint/$userId', body: {
+      'isVerified': true,
+      'extractedCin': extractedCin,
+    });
+    if (response.statusCode != 200) {
+      throw Exception('Failed to mark user as verified: ${response.body}');
+    }
+  }
 }

@@ -15,8 +15,13 @@ const String adminEndpoint        = "$baseApiUrl/admins";
 const String deviceEndpoint       = "$baseApiUrl/devices";
 const String notificationEndpoint = "$baseApiUrl/notifications";
 
-// Pricing API (separate service)
-const String pricingApiUrl              = "http://85.214.12.71:8000";
+// ── NEW: Proxied Python FastAPI Services ──
+
+// KYC Service (Now securely routed through the Node Gateway)
+const String kycApiUrl = "$baseApiUrl/kyc";
+
+// Pricing Service (Now securely routed through the Node Gateway)
+const String pricingApiUrl              = "$baseApiUrl/pricing";
 const String pricingEstimateEndpoint    = "$pricingApiUrl/estimate";
 const String pricingVehiclesEndpoint    = "$pricingApiUrl/vehicles";
 const String pricingLocationsEndpoint   = "$pricingApiUrl/locations";

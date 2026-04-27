@@ -36,15 +36,42 @@ class Car {
   });
 
   bool get isPaired => deviceId != null;
-  bool get isAvailable => availabilityStatus == "AVAILABLE" && isPaired;
+  bool get isAvailable => availabilityStatus.toUpperCase() == "AVAILABLE" && isPaired;
 
   factory Car.fromJson(Map<String, dynamic> json) {
-    LatLng? location;
-    if (json['lastKnownLocation'] != null && json['lastKnownLocation'] is Map) {
-      final loc = json['lastKnownLocation'];
-      if (loc['lat'] != null && loc['lng'] != null) {
-        location = LatLng((loc['lat'] as num).toDouble(), (loc['lng'] as num).toDouble());
+    LatLng? parsedLocation;
+    
+    // Check BOTH 'lastKnownLocation' and 'location' keys for coordinates
+    final locData = json['lastKnownLocation'] ?? json['location'];
+    
+    if (locData != null) {
+      if (locData is Map) {
+        if (locData['lat'] != null && locData['lng'] != null) {
+          parsedLocation = LatLng(
+            (locData['lat'] as num).toDouble(), 
+            (locData['lng'] as num).toDouble()
+          );
+        }
+      } else if (locData is String) {
+        final parts = locData.split(',');
+        if (parts.length == 2) {
+          final lat = double.tryParse(parts[0].trim());
+          final lng = double.tryParse(parts[1].trim());
+          if (lat != null && lng != null) {
+            parsedLocation = LatLng(lat, lng);
+          }
+        }
       }
+    }
+
+    // Ensure availability parses correctly
+    String status = "AVAILABLE";
+    if (json['availability'] != null && json['availability'] is Map) {
+      status = json['availability']['status'] ?? "AVAILABLE";
+    } else if (json['availabilityStatus'] != null) {
+      status = json['availabilityStatus'];
+    } else if (json['status'] != null) {
+      status = json['status']; 
     }
 
     return Car(
@@ -59,12 +86,10 @@ class Car {
       allowedCities: json['allowedCities'] != null
           ? List<String>.from(json['allowedCities'])
           : [],
-      deviceId: json['deviceId'] as String?,
+      deviceId: (json['deviceId'] == "UNKNOWN" || json['deviceId'] == "No device") ? null : json['deviceId'] as String?,
       healthStatus: json['healthStatus'] ?? "OK",
-      lastKnownLocation: location,
-      availabilityStatus: (json['availability'] != null && json['availability'] is Map)
-          ? json['availability']['status'] ?? "AVAILABLE"
-          : json['availabilityStatus'] ?? "AVAILABLE",
+      lastKnownLocation: parsedLocation, 
+      availabilityStatus: status,
     );
   }
 
